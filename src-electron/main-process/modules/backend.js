@@ -14,7 +14,7 @@ const fs = require("fs-extra");
 const path = require("upath");
 const objectAssignDeep = require("object-assign-deep");
 
-const { ipcMain: ipc } = electron;
+const { ipcMain: ipc, app } = electron;
 
 const LOG_LEVELS = ["fatal", "error", "warn", "info", "debug", "trace"];
 
@@ -36,7 +36,19 @@ export class Backend {
   init(config) {
     // Store all data within the application folder for portability
     // Each copy of the wallet has its own isolated config and data
-    const appDir = process.cwd();
+    let appDir;
+
+    if (process.env.APPIMAGE) {
+      // Running as Linux AppImage - use the folder containing the AppImage
+      appDir = path.dirname(process.env.APPIMAGE);
+    } else if (app.isPackaged) {
+      // Production build (Windows installer, etc.) - use app's executable location
+      appDir = path.dirname(app.getPath("exe"));
+    } else {
+      // Dev mode - use current working directory
+      appDir = process.cwd();
+    }
+
     const configDir = path.join(appDir, "data");
 
     this.wallet_dir = path.join(appDir, "wallets");

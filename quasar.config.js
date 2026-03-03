@@ -155,24 +155,9 @@ export default configure(function () {
         },
 
         linux: {
-          target: ["AppImage", "deb"],
+          target: ["AppImage"],
           icon: "src-electron/icons/linux-512x512.png",
           category: "Finance"
-        },
-
-        deb: {
-          depends: [
-            "libgtk-3-0",
-            "libnotify4",
-            "libnss3",
-            "libxss1",
-            "libxtst6",
-            "xdg-utils",
-            "libatspi2.0-0",
-            "libuuid1",
-            "libsecret-1-0",
-            "libappindicator3-1 | libayatana-appindicator3-1"
-          ]
         },
 
         mac: {

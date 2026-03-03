@@ -98,7 +98,6 @@ jobs:
           tag_name: v1
           files: |
             dist/electron/Packaged/*.AppImage
-            dist/electron/Packaged/*.deb
           fail_on_unmatched_files: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

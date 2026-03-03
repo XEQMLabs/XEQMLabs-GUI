@@ -129,7 +129,6 @@ jobs:
           name: linux-build
           path: |
             dist/electron/Packaged/*.AppImage
-            dist/electron/Packaged/*.deb
           retention-days: 30
 
   create-release:
@@ -175,7 +174,6 @@ jobs:
           files: |
             release/**/*.exe
             release/**/*.AppImage
-            release/**/*.deb
           fail_on_unmatched_files: false
           generate_release_notes: false
           draft: false
@@ -191,8 +189,7 @@ jobs:
             - `XEQ-GUI-*-win.exe` - Windows Installer
 
             **Linux:**
-            - `XEQ-GUI-*-linux.AppImage` - AppImage (portable)
-            - `XEQ-GUI-*-linux.deb` - Debian/Ubuntu package
+            - `XEQ-GUI-*-linux.AppImage` - Portable AppImage
 
             ### Networks
             - **Legacy Mainnet** - Live, original XEQ network
