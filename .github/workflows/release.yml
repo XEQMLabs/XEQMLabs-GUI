@@ -3,16 +3,42 @@ name: Release
 on:
   push:
     tags:
-      - "v*" # Triggers on version tags like v1.0.0
+      - "v*"
 
 jobs:
   build-windows:
     name: Build Windows
     runs-on: windows-latest
+    permissions:
+      contents: write
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
+
+      - name: Download Legacy Windows binaries
+        shell: pwsh
+        run: |
+          mkdir -p bin-legacy
+          Write-Host "=== Downloading Legacy v22 Windows binaries ==="
+          Invoke-WebRequest -Uri "https://github.com/EquilibriaCC/Equilibria/releases/download/v22.0.0/build-depends-windows-x86_64.zip" -OutFile legacy.zip
+          Expand-Archive -Path legacy.zip -DestinationPath legacy-extract -Force
+          Get-ChildItem -Path legacy-extract -Recurse -Filter "*.exe" | ForEach-Object { Write-Host $_.FullName }
+          $walletRpc = Get-ChildItem -Path legacy-extract -Recurse -Filter "xeq-wallet-rpc.exe" | Select-Object -First 1
+          $daemon = Get-ChildItem -Path legacy-extract -Recurse -Filter "xeq-d.exe" | Select-Object -First 1
+          if ($walletRpc) { Copy-Item $walletRpc.FullName -Destination "bin-legacy/xeq-wallet-rpc.exe" }
+          if ($daemon) { Copy-Item $daemon.FullName -Destination "bin-legacy/xeq-d.exe" }
+          Write-Host "=== bin-legacy contents ==="
+          Get-ChildItem bin-legacy
+          Remove-Item legacy.zip -ErrorAction SilentlyContinue
+          Remove-Item legacy-extract -Recurse -ErrorAction SilentlyContinue
+
+      - name: Setup bin directory placeholder
+        shell: pwsh
+        run: |
+          mkdir -p bin
+          New-Item -Path "bin/.gitkeep" -ItemType File -Force
+          Write-Host "Note: New mainnet binaries not yet available for Windows"
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -26,33 +52,59 @@ jobs:
       - name: Build Windows
         run: npm run build:win
 
-      - name: Find and list build artifacts
-        run: |
-          Write-Host "Searching for .exe files..."
-          Get-ChildItem -Path . -Recurse -Filter "*.exe" -ErrorAction SilentlyContinue | Select-Object FullName, Length | Format-Table -AutoSize
-          Write-Host "`nContents of dist directory:"
-          if (Test-Path dist) { Get-ChildItem -Path dist -Recurse -Directory | Select-Object FullName }
-          Write-Host "`nContents of dist/electron if it exists:"
-          if (Test-Path dist/electron) { Get-ChildItem -Path dist/electron -Recurse | Select-Object Name, FullName, Length | Format-Table -AutoSize }
-          Write-Host "`nContents of dist/electron/Packaged if it exists:"
-          if (Test-Path dist/electron/Packaged) { Get-ChildItem -Path dist/electron/Packaged -Recurse | Select-Object Name, FullName, Length | Format-Table -AutoSize }
-        continue-on-error: true
-
       - name: Upload Windows artifacts
         uses: actions/upload-artifact@v4
         with:
           name: windows-build
           path: |
-            dist/electron/**/*.exe
+            dist/electron/Packaged/*.exe
           retention-days: 30
 
   build-linux:
     name: Build Linux
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
+
+      - name: Download Legacy binaries (v22) from EquilibriaCC
+        run: |
+          mkdir -p bin-legacy
+          echo "=== Downloading Legacy v22.0.0 binaries ==="
+          wget -q https://github.com/EquilibriaCC/Equilibria/releases/download/v22.0.0/build-depends-x86_64-linux.zip -O legacy.zip
+          unzip -o legacy.zip
+          for NAME in xeq-wallet-rpc wallet-rpc; do
+            F=$(find . -path ./node_modules -prune -o -path ./.git -prune -o -path ./bin -prune -o -type f -name "$NAME" -print | head -1)
+            if [ -n "$F" ]; then
+              cp "$F" ./bin-legacy/xeq-wallet-rpc
+              break
+            fi
+          done
+          for NAME in xeq-d daemon equilibriad; do
+            F=$(find . -path ./node_modules -prune -o -path ./.git -prune -o -path ./bin -prune -o -type f -name "$NAME" -print | head -1)
+            if [ -n "$F" ]; then
+              cp "$F" ./bin-legacy/xeq-d
+              break
+            fi
+          done
+          chmod +x bin-legacy/*
+          ls -la bin-legacy/
+          rm -f legacy.zip
+
+      - name: Extract New Mainnet binaries from Docker
+        run: |
+          mkdir -p bin
+          echo "=== Pulling Docker image ==="
+          docker pull ghcr.io/equilibriahorizon/equilibria-node:latest
+          docker create --name temp-extract ghcr.io/equilibriahorizon/equilibria-node:latest
+          docker cp temp-extract:/usr/local/bin/xeq-wallet-rpc ./bin/
+          docker cp temp-extract:/usr/local/bin/xeq-d ./bin/
+          docker rm temp-extract
+          chmod +x bin/*
+          ls -la bin/
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -70,25 +122,6 @@ jobs:
 
       - name: Build Linux
         run: npm run build:linux
-
-      - name: Find and list build artifacts
-        run: |
-          echo "Searching for AppImage and deb files..."
-          find . -name "*.AppImage" -o -name "*.deb" 2>/dev/null | head -20
-          echo ""
-          echo "Contents of dist directory:"
-          ls -lah dist/ 2>/dev/null || echo "dist not found"
-          if [ -d dist/electron ]; then
-            echo ""
-            echo "Contents of dist/electron:"
-            ls -lah dist/electron/
-            if [ -d dist/electron/Packaged ]; then
-              echo ""
-              echo "Contents of dist/electron/Packaged:"
-              ls -lah dist/electron/Packaged/
-            fi
-          fi
-        continue-on-error: true
 
       - name: Upload Linux artifacts
         uses: actions/upload-artifact@v4
@@ -131,19 +164,10 @@ jobs:
           VERSION=${GITHUB_REF#refs/tags/v}
           echo "version=$VERSION" >> $GITHUB_OUTPUT
 
-      - name: Find release files
-        id: find_files
+      - name: List release files
         run: |
-          echo "=== Windows files ==="
-          find release/windows -type f 2>/dev/null || echo "No Windows files found"
-          ls -lah release/windows/ 2>/dev/null || echo "release/windows directory doesn't exist"
-          echo ""
-          echo "=== Linux files ==="
-          find release/linux -type f 2>/dev/null || echo "No Linux files found"
-          ls -lah release/linux/ 2>/dev/null || echo "release/linux directory doesn't exist"
-          echo ""
-          echo "=== All release files recursively ==="
-          find release -type f 2>/dev/null || echo "No files found in release directory"
+          echo "=== All release files ==="
+          find release -type f 2>/dev/null || echo "No files found"
 
       - name: Create Release
         uses: softprops/action-gh-release@v1
@@ -157,25 +181,26 @@ jobs:
           draft: false
           prerelease: false
           body: |
-            ## Equilibria Electron GUI Wallet ${{ steps.get_version.outputs.version }}
+            ## XEQ GUI v${{ steps.get_version.outputs.version }}
+
+            Official GUI wallet for Equilibria (XEQ).
 
             ### Downloads
 
             **Windows:**
-            - Installer: `equilibria-electron-wallet-*-win.exe`
-            - Portable: `equilibria-electron-wallet-*-portable.exe`
+            - `XEQ-GUI-*-win.exe` - Windows Installer
 
             **Linux:**
-            - AppImage: `equilibria-electron-wallet-*-linux.AppImage`
-            - Debian Package: `equilibria-electron-wallet-*-linux.deb`
+            - `XEQ-GUI-*-linux.AppImage` - AppImage (portable)
+            - `XEQ-GUI-*-linux.deb` - Debian/Ubuntu package
 
-            ### Installation Instructions
+            ### Networks
+            - **Legacy Mainnet** - Live, original XEQ network
+            - **Mainnet** - Offline, prepare for new mainnet launch
+            - **Testnet** - Development and testing
 
-            See the [README.md](https://github.com/${{ github.repository }}/blob/main/README.md) for detailed installation and setup instructions.
-
-            ### Prerequisites
-
-            - Docker Desktop installed and running
-            - Service Node and Wallet RPC running in Docker (see README for setup)
+            ### Notes
+            - All data stored within app folder (portable)
+            - Default network is Legacy Mainnet
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
