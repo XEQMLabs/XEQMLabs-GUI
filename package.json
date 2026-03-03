@@ -1,16 +1,16 @@
 {
-  "name": "legacy-xeq-gui",
-  "version": "2.0.0",
-  "description": "GUI wallet for the legacy XEQ blockchain",
-  "productName": "Legacy XEQ GUI",
+  "name": "xeq-gui",
+  "version": "1.0.0",
+  "description": "GUI wallet for Equilibria (XEQ)",
+  "productName": "XEQ GUI",
   "repository": {
     "type": "git",
-    "url": "https://github.com/DomXEQ/Legacy-XEQ-GUI.git"
+    "url": "https://github.com/DomXEQ/New-XEQ-GUI.git"
   },
-  "cordovaId": "com.xeq.legacy-wallet",
+  "cordovaId": "com.equilibria.xeq-wallet",
   "author": {
-    "name": "DomXEQ",
-    "email": "domxeq@proton.me"
+    "name": "Equilibria",
+    "email": "contact@equilibria.cc"
   },
   "private": true,
   "scripts": {

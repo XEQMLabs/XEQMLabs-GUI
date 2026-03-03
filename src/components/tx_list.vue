@@ -125,6 +125,7 @@ export default {
       theme: state => state.gateway.app.config.appearance.theme,
       current_height: state => state.gateway.daemon.info.height,
       wallet_height: state => state.gateway.wallet.info.height,
+      netType: state => state.gateway.app.config.app?.net_type || "mainnet",
       tx_list_raw: state =>
         (state.gateway &&
           state.gateway.wallet &&
@@ -138,6 +139,10 @@ export default {
           state.gateway.wallet.address_list.address_book) ||
         []
     }),
+    // Legacy network uses 1e4 (4 decimal places), new mainnet/testnet use 1e9
+    atomicDivisor() {
+      return this.netType === "legacy" ? 1e4 : 1e9;
+    },
     tx_list() {
       const list = this.tx_list_raw || [];
       return Array.isArray(list) ? list : [];
@@ -276,7 +281,7 @@ export default {
       // id, address, notes, amount, recipient name
       const fields = [tx.txid, tx.note];
 
-      const formattedAmount = tx.amount / 1e4;
+      const formattedAmount = tx.amount / this.atomicDivisor;
       fields.push(String(formattedAmount));
 
       // Get all addresses and names and add them on

@@ -1,5 +1,20 @@
 <template>
   <div class="wallet-settings">
+    <!-- Testnet Connect/Disconnect Button -->
+    <q-btn
+      v-if="isTestnet"
+      :class="daemon_connected ? 'disconnect-btn' : ''"
+      :color="daemon_connected ? '' : 'primary'"
+      size="md"
+      :loading="daemon_connecting"
+      :disable="daemon_connecting"
+      class="daemon-toggle-btn q-mr-sm"
+      @click="toggleDaemonConnection"
+    >
+      <q-icon :name="daemon_connected ? 'power_off' : 'power'" class="q-mr-xs" />
+      {{ daemon_connected ? 'Disconnect' : 'Connect' }}
+    </q-btn>
+
     <q-btn
       icon-right="more_vert"
       :label="$t('buttons.settings')"
@@ -9,6 +24,13 @@
     >
       <q-menu ref="settingsMenu" anchor="bottom right" self="top right">
         <q-list separator class="menu-list">
+          <q-item
+            clickable
+            v-ripple
+            @click="closeMenu(), openNetworkSettings()"
+          >
+            <q-item-label header>Network Settings</q-item-label>
+          </q-item>
           <q-item
             clickable
             v-ripple
@@ -474,6 +496,10 @@ export default {
     info: state => state.gateway.wallet.info,
     secret: state => state.gateway.wallet.secret,
     wallet_data_dir: state => state.gateway.app.config.app.wallet_data_dir,
+    daemon_connected: state => state.gateway.app.daemon_connected,
+    daemon_connecting: state => state.gateway.app.daemon_connecting,
+    isTestnet: state => state.gateway.app.config.app.net_type === "testnet",
+    config: state => state.gateway.app.pending_config,
     is_ready() {
       return this.$store.getters["gateway/isReady"];
     },
@@ -530,8 +556,28 @@ export default {
     );
   },
   methods: {
+    toggleDaemonConnection() {
+      if (this.daemon_connected) {
+        this.$gateway.send("core", "disconnect_daemon");
+      } else {
+        // Save config first, then connect
+        if (this.config && this.config.app && this.config.daemons) {
+          this.$gateway.send("core", "quick_save_config", {
+            app: this.config.app,
+            daemons: this.config.daemons
+          });
+        }
+        this.$gateway.send("core", "connect_daemon");
+      }
+    },
     closeMenu() {
       this.$refs.settingsMenu && this.$refs.settingsMenu.hide();
+    },
+    openNetworkSettings() {
+      // Request the main settings modal to open via store
+      this.$store.commit("gateway/set_app_data", {
+        open_settings_requested: true
+      });
     },
     showModal(which) {
       if (!this.is_ready) return;
@@ -955,6 +1001,23 @@ export default {
 
   .oxen-field {
     flex: 1;
+  }
+}
+
+.wallet-settings {
+  display: flex;
+  align-items: center;
+
+  .daemon-toggle-btn {
+    font-weight: 500;
+    min-width: 130px;
+    padding-left: 12px;
+    padding-right: 16px;
+
+    &.disconnect-btn {
+      background-color: #00d4ff !important;
+      color: #000000 !important;
+    }
   }
 }
 </style>

@@ -34,27 +34,23 @@ export class Backend {
   }
 
   init(config) {
-    let configDir;
-    if (os.platform() === "win32") {
-      configDir = path.join(process.env.ProgramData || "C:\\ProgramData", "legacy-xeq-gui");
-    } else {
-      configDir = path.join(os.homedir(), ".legacy-xeq-gui");
-    }
-    this.wallet_dir = path.join(process.cwd(), "wallets");
+    // Store all data within the application folder for portability
+    // Each copy of the wallet has its own isolated config and data
+    const appDir = process.cwd();
+    const configDir = path.join(appDir, "data");
 
+    this.wallet_dir = path.join(appDir, "wallets");
     this.config_dir = configDir;
+
+    // Create data directory if it doesn't exist
     if (!fs.existsSync(configDir)) {
       fs.mkdirpSync(configDir);
     }
 
-    if (!fs.existsSync(path.join(this.config_dir, "gui"))) {
-      fs.mkdirpSync(path.join(this.config_dir, "gui"));
-    }
-
-    this.config_file = path.join(this.config_dir, "gui", "config.json");
+    this.config_file = path.join(this.config_dir, "config.json");
 
     const daemon = {
-      type: "remote",
+      type: "local",  // Default to local - no public remote nodes available
       p2p_bind_ip: "0.0.0.0",
       p2p_bind_port: 9230,
       rpc_bind_ip: "127.0.0.1",
@@ -70,7 +66,8 @@ export class Backend {
     const daemons = {
       mainnet: {
         ...daemon,
-        remote_host: "us.equilibriacc.com",
+        type: "local",  // Mainnet is offline - use local mode for offline wallet creation
+        remote_host: "seed1.equilibria.network",
         remote_port: 9231
       },
       stagenet: {
@@ -81,11 +78,19 @@ export class Backend {
       },
       testnet: {
         ...daemon,
-        type: "remote",
-        remote_host: "127.0.0.1",
-        remote_port: 18091,
-        p2p_bind_port: 18090,
-        rpc_bind_port: 18091
+        type: "local",  // No public remote nodes available - use local mode
+        remote_host: "84.247.143.210",
+        remote_port: 38157,
+        p2p_bind_port: 38156,
+        rpc_bind_port: 38157
+      },
+      legacy: {
+        ...daemon,
+        type: "remote",  // Legacy mainnet has working remote nodes
+        remote_host: "us.equilibriacc.com",
+        remote_port: 9231,
+        p2p_bind_port: 19230,
+        rpc_bind_port: 19231
       }
     };
 
@@ -98,12 +103,12 @@ export class Backend {
         data_dir: this.config_dir,
         wallet_data_dir: defaultWalletDir,
         ws_bind_port: 12313,
-        net_type: "mainnet"
+        net_type: "legacy"
       },
       wallet: {
         type: "local",
         rpc_bind_port: 22026,
-        log_level: 0
+        log_level: 2  // Debug level for troubleshooting
       }
     };
 
@@ -115,7 +120,32 @@ export class Backend {
       }
     };
 
+    // New XEQ mainnet seed nodes (mainnet currently offline)
     this.remotes = [
+      {
+        host: "seed1.equilibria.network",
+        port: "9231"
+      },
+      {
+        host: "seed2.equilibria.network",
+        port: "9231"
+      },
+      {
+        host: "seed3.equilibria.network",
+        port: "9231"
+      },
+      {
+        host: "seed4.equilibria.network",
+        port: "9231"
+      },
+      {
+        host: "seed5.equilibria.network",
+        port: "9231"
+      }
+    ];
+
+    // Legacy mainnet remote nodes (working nodes on original XEQ network)
+    this.legacyRemotes = [
       {
         host: "us.equilibriacc.com",
         port: "9231"
@@ -203,23 +233,43 @@ export class Backend {
         break;
       case "quick_save_config":
         // save only partial config settings
+        console.log("[Backend] quick_save_config called with params:", JSON.stringify(params, null, 2));
+        console.log("[Backend] Config file path:", this.config_file);
+        console.log("[Backend] Current config_data.app BEFORE merge:", JSON.stringify(this.config_data.app, null, 2));
+
         Object.keys(params).map(key => {
           this.config_data[key] = Object.assign(
             this.config_data[key],
             params[key]
           );
         });
-        fs.writeFile(
-          this.config_file,
-          JSON.stringify(this.config_data, null, 4),
-          "utf8",
-          () => {
-            this.send("set_app_data", {
-              config: params,
-              pending_config: params
-            });
-          }
-        );
+
+        console.log("[Backend] Config_data.app AFTER merge:", JSON.stringify(this.config_data.app, null, 2));
+
+        // Use sync write to ensure config is saved before app restart
+        try {
+          const configJson = JSON.stringify(this.config_data, null, 4);
+          console.log("[Backend] Writing config to disk, net_type:", this.config_data.app?.net_type);
+          fs.writeFileSync(
+            this.config_file,
+            configJson,
+            "utf8"
+          );
+          console.log("[Backend] Config written successfully to:", this.config_file);
+
+          // Verify the write by reading back
+          const verifyData = fs.readFileSync(this.config_file, "utf8");
+          const verifyParsed = JSON.parse(verifyData);
+          console.log("[Backend] Verified config on disk, net_type:", verifyParsed.app?.net_type);
+
+          this.send("set_app_data", {
+            config: params,
+            pending_config: params
+          });
+        } catch (err) {
+          console.error("[Backend] Failed to save config:", err);
+          this.sendLog("error", `Failed to save config: ${err.message}`);
+        }
         break;
       case "save_config_init":
       case "save_config": {
@@ -283,29 +333,38 @@ export class Backend {
         break;
 
       case "open_explorer": {
-        const { net_type } = this.config_data.app;
-
-        let path = null;
-        if (params.type === "tx") {
-          path = "tx";
-        } else if (params.type === "service_node") {
-          path = "sn";
-        }
-
-        if (path) {
-          const baseUrl =
-            net_type === "testnet"
-              ? "https://testnet.oxen.observer"
-              : "https://oxen.observer";
-          const url = `${baseUrl}/${path}/`;
-          require("electron").shell.openExternal(url + params.id);
-        }
+        // Block explorer not yet available for new XEQ network
+        // TODO: Update URLs when block explorer is deployed
+        this.send("show_notification", {
+          type: "warning",
+          message: "Block explorer not yet available for the new XEQ network.",
+          timeout: 3000
+        });
         break;
       }
 
       case "open_url":
         if (typeof params.url === "string" && params.url.startsWith("https://")) {
           require("electron").shell.openExternal(params.url);
+        }
+        break;
+
+      case "open_folder":
+        if (typeof params.path === "string" && params.path.length > 0) {
+          // Ensure the folder exists before trying to open it
+          if (!fs.existsSync(params.path)) {
+            try {
+              fs.mkdirpSync(params.path);
+            } catch (e) {
+              this.send("show_notification", {
+                type: "negative",
+                message: `Could not create folder: ${params.path}`,
+                timeout: 3000
+              });
+              break;
+            }
+          }
+          require("electron").shell.openPath(params.path);
         }
         break;
 
@@ -350,6 +409,14 @@ export class Backend {
         break;
       }
 
+      case "connect_daemon":
+        this.connectDaemon();
+        break;
+
+      case "disconnect_daemon":
+        this.disconnectDaemon();
+        break;
+
       default:
         break;
     }
@@ -392,8 +459,13 @@ export class Backend {
   }
 
   startup() {
+    console.log("[Backend] ========== STARTUP BEGIN ==========");
+    console.log("[Backend] Config file path:", this.config_file);
+    console.log("[Backend] Default net_type:", this.defaults.app?.net_type);
+
     this.send("set_app_data", {
       remotes: this.remotes,
+      legacyRemotes: this.legacyRemotes,
       defaults: this.defaults
     });
 
@@ -406,6 +478,7 @@ export class Backend {
 
     fs.readFile(this.config_file, "utf8", (err, data) => {
       if (err) {
+        console.log("[Backend] No config file found, using defaults");
         // First run — no config file. Save defaults to disk and auto-start
         // using the default US remote node without showing the setup wizard.
         fs.writeFile(
@@ -421,6 +494,8 @@ export class Backend {
         }
 
         let disk_config_data = JSON.parse(data);
+        console.log("[Backend] Config read from disk, net_type:", disk_config_data.app?.net_type);
+        console.log("[Backend] Config read from disk, daemon type:", disk_config_data.daemons?.[disk_config_data.app?.net_type]?.type);
 
         // semi-shallow object merge
         Object.keys(disk_config_data).map(key => {
@@ -432,6 +507,8 @@ export class Backend {
             disk_config_data[key]
           );
         });
+
+        console.log("[Backend] After merge, net_type:", this.config_data.app?.net_type);
       }
 
       // here we may want to check if config data is valid, if not also send code -1
@@ -447,14 +524,18 @@ export class Backend {
           return map;
         }, {});
 
+      console.log("[Backend] Validated app config:", JSON.stringify(validated.app, null, 2));
+
       // Make sure the daemon data is valid
       this.config_data = {
         ...this.config_data,
         ...validated
       };
 
+      console.log("[Backend] After validation, net_type:", this.config_data.app?.net_type);
+
       // Migrate local_remote -> remote (option removed for Legacy XEQ)
-      for (const net of ["mainnet", "stagenet", "testnet"]) {
+      for (const net of ["mainnet", "stagenet", "testnet", "legacy"]) {
         if (
           this.config_data.daemons &&
           this.config_data.daemons[net] &&
@@ -471,6 +552,9 @@ export class Backend {
         "utf8",
         () => {}
       );
+
+      console.log("[Backend] Sending to frontend - net_type:", this.config_data.app?.net_type);
+      console.log("[Backend] ========== STARTUP COMPLETE ==========");
 
       this.send("set_app_data", {
         config: this.config_data,
@@ -528,7 +612,8 @@ export class Backend {
       const dirs = {
         mainnet: this.config_data.app.data_dir,
         stagenet: path.join(this.config_data.app.data_dir, "stagenet"),
-        testnet: path.join(this.config_data.app.data_dir, "testnet")
+        testnet: path.join(this.config_data.app.data_dir, "testnet"),
+        legacy: path.join(this.config_data.app.data_dir, "legacy")
       };
 
       // Make sure we have the directories we need
@@ -547,92 +632,176 @@ export class Backend {
       this.daemon = new Daemon(this);
       this.walletd = new WalletRPC(this);
 
-      this.sendLog("info", "Backend initialized, starting daemon...");
+      // Check if we should auto-connect (legacy network with remote node)
+      const shouldAutoConnect =
+        net_type === "legacy" &&
+        this.config_data.daemons[net_type] &&
+        this.config_data.daemons[net_type].type === "remote";
 
+      if (shouldAutoConnect) {
+        this.sendLog("info", "Legacy network detected with remote node - auto-connecting...");
+      } else {
+        this.sendLog("info", "Backend initialized in offline mode.");
+      }
+
+      // Start in appropriate mode
       this.send("set_app_data", {
         status: {
-          code: 3 // Starting daemon
-        }
+          code: 6 // Starting wallet
+        },
+        daemon_connected: false
       });
 
-      this.daemon.checkVersion().then(version => {
-        if (version) {
+      // Start wallet-rpc first
+      this.walletd
+        .start(this.config_data)
+        .then(() => {
+          this.send("set_app_data", { status: { code: 7 } }); // Reading wallet list
+          this.walletd.listWallets(true);
           this.send("set_app_data", {
-            status: {
-              code: 4,
-              message: version
-            }
+            status: { code: 0 }, // Ready
+            daemon_connected: false
           });
-        } else {
-          // daemon binary not found (e.g. removed by AV) — force remote mode
-          this.config_data.daemons[net_type].type = "remote";
-          this.send("set_app_data", {
-            status: { code: 5 },
-            config: this.config_data,
-            pending_config: this.config_data
-          });
-        }
 
-        this.daemon.start(this.config_data).then(() => {
-          this.send("set_app_data", { status: { code: 6 } }); // Starting wallet
-
-          this.walletd
-            .start(this.config_data)
-            .then(() => {
-              this.send("set_app_data", { status: { code: 7 } }); // Reading wallet list
-              this.walletd.listWallets(true);
-              this.send("set_app_data", { status: { code: 0 } }); // Ready
-            })
-            .catch(error => {
-              console.error("[Backend] Error starting wallet RPC:", error);
-              this.sendLog("error", `Error starting wallet RPC: ${error.message || error}`);
-              this.send("show_notification", {
-                type: "negative",
-                message: `Error starting wallet RPC: ${error.message || error}`,
-                timeout: 5000
-              });
-              this.send("set_app_data", { status: { code: -1 } });
+          // Auto-connect for legacy remote, otherwise show welcome message
+          if (shouldAutoConnect) {
+            this.send("show_notification", {
+              type: "info",
+              message: "Connecting to remote node...",
+              timeout: 3000
             });
-        }).catch(error => {
-          // Daemon unreachable — still start wallet-rpc so users can create wallets offline
-          const msg = error && error.message ? error.message : String(error || "unknown");
-          this.sendLog("warn", `Daemon unreachable: ${msg}. Attempting offline mode.`);
+            // Auto-connect to daemon
+            this.connectDaemon();
+          } else {
+            // Show welcome message for new users or non-legacy networks
+            this.send("show_notification", {
+              type: "info",
+              color: "cyan",
+              textColor: "dark",
+              message: "Welcome to Equilibria! Please select a network and connect via remote or local node.",
+              timeout: 8000
+            });
+          }
+        })
+        .catch(walletError => {
+          const wMsg = walletError && walletError.message ? walletError.message : String(walletError || "unknown");
+          this.sendLog("error", `Wallet RPC failed: ${wMsg}`);
           this.send("show_notification", {
-            type: "warning",
-            message: "Could not connect to daemon. You can still create a new wallet.",
-            timeout: 6000
+            type: "negative",
+            message: `Could not start wallet: ${wMsg}`,
+            timeout: 5000
           });
-          this.send("set_app_data", { status: { code: 6 } }); // Starting wallet...
-          this.walletd
-            .start(this.config_data)
-            .then(() => {
-              this.send("set_app_data", { status: { code: 7 } });
-              this.walletd.listWallets(true);
-              this.send("set_app_data", { status: { code: 8 } }); // Offline mode — route to wallet-select
-            })
-            .catch(walletError => {
-              const wMsg = walletError && walletError.message ? walletError.message : String(walletError || "unknown");
-              this.sendLog("error", `Wallet RPC also failed in offline mode: ${wMsg}`);
-              this.send("show_notification", {
-                type: "negative",
-                message: `Could not start wallet: ${wMsg}`,
-                timeout: 5000
-              });
-              this.send("set_app_data", { status: { code: -1 } });
-            });
+          this.send("set_app_data", { status: { code: -1 } });
         });
-      }).catch(error => {
-        console.error("[Backend] Error checking daemon version:", error);
-        this.sendLog("error", `Error checking daemon version: ${error.message || error}`);
-        this.send("show_notification", {
-          type: "negative",
-          message: `Error checking daemon version: ${error.message || error}`,
-          timeout: 5000
-        });
-        this.send("set_app_data", { status: { code: -1 } });
-      });
     }); // closes fs.readFile callback
   } // closes startup() method
+
+  // Manual daemon connection - called from Network Settings
+  connectDaemon() {
+    const { net_type } = this.config_data.app;
+
+    this.sendLog("info", `Connecting to daemon (${net_type})...`);
+    this.send("set_app_data", {
+      daemon_connecting: true,
+      daemon_connected: false
+    });
+
+    this.daemon.checkVersion().then(version => {
+      if (version) {
+        this.sendLog("info", `Daemon version: ${version}`);
+      } else {
+        this.sendLog("warn", "Daemon binary not found");
+        this.send("show_notification", {
+          type: "negative",
+          message: "Daemon binary not found. Please check your installation.",
+          timeout: 5000
+        });
+        this.send("set_app_data", {
+          daemon_connecting: false,
+          daemon_connected: false
+        });
+        return;
+      }
+
+      this.daemon.start(this.config_data).then(() => {
+        this.sendLog("info", "Daemon connected successfully!");
+
+        // Update wallet-rpc to use the new daemon address (only if a wallet is open)
+        if (this.walletd && this.walletd.wallet_state && this.walletd.wallet_state.open) {
+          const daemon = this.config_data.daemons[net_type];
+          let daemonHost, daemonPort;
+          if (daemon.type === "remote") {
+            daemonHost = daemon.remote_host;
+            daemonPort = daemon.remote_port;
+          } else {
+            daemonHost = daemon.rpc_bind_ip;
+            daemonPort = daemon.rpc_bind_port;
+          }
+
+          // Tell wallet-rpc to use this daemon
+          this.walletd.setDaemon(daemonHost, daemonPort).then(success => {
+            if (success) {
+              this.sendLog("info", "Wallet-rpc daemon address updated");
+              // Notify user that wallet will now sync
+              this.send("show_notification", {
+                type: "info",
+                color: "cyan",
+                textColor: "dark",
+                message: "Wallet syncing with network - this may take a moment...",
+                timeout: 5000
+              });
+            }
+          });
+        }
+
+        this.send("set_app_data", {
+          daemon_connecting: false,
+          daemon_connected: true
+        });
+        this.send("show_notification", {
+          type: "positive",
+          message: "Connected to daemon successfully!",
+          timeout: 3000
+        });
+      }).catch(error => {
+        const msg = error && error.message ? error.message : String(error || "unknown");
+        this.sendLog("warn", `Failed to connect to daemon: ${msg}`);
+        this.send("show_notification", {
+          type: "negative",
+          message: `Failed to connect: ${msg}`,
+          timeout: 5000
+        });
+        this.send("set_app_data", {
+          daemon_connecting: false,
+          daemon_connected: false
+        });
+      });
+    }).catch(error => {
+      const msg = error && error.message ? error.message : String(error || "unknown");
+      this.sendLog("error", `Daemon check failed: ${msg}`);
+      this.send("set_app_data", {
+        daemon_connecting: false,
+        daemon_connected: false
+      });
+    });
+  }
+
+  // Disconnect daemon
+  disconnectDaemon() {
+    if (this.daemon) {
+      this.daemon.quit().then(() => {
+        this.sendLog("info", "Daemon disconnected");
+        this.send("set_app_data", {
+          daemon_connected: false
+        });
+        this.send("show_notification", {
+          type: "info",
+          message: "Disconnected from daemon.",
+          timeout: 3000
+        });
+      });
+    }
+  }
 
   quit() {
     return new Promise(resolve => {

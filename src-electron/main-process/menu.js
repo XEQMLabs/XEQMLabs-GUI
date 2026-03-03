@@ -44,7 +44,7 @@ let template = [
 
 if (process.platform === "darwin") {
   template.unshift({
-    label: "Legacy XEQ GUI",
+    label: "XEQ GUI",
     submenu: [
       { role: "about" },
       { type: "separator" },

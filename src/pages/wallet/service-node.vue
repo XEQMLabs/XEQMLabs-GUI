@@ -1,5 +1,13 @@
 <template>
   <q-page class="service-node-page">
+    <!-- Development Warning Banner -->
+    <q-banner class="bg-warning text-dark q-mb-md">
+      <template v-slot:avatar>
+        <q-icon name="warning" />
+      </template>
+      <strong>Development Notice:</strong> Service node staking and registration from the GUI is currently in development. Errors may occur. Please use with caution and report any issues.
+    </q-banner>
+
     <div class="header row items-center justify-center q-pt-md">
       <q-btn-toggle
         v-model="screen"

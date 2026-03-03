@@ -32,7 +32,7 @@
           :dark="theme == 'dark'"
           type="number"
           min="0"
-          :max="unlocked_balance / 1e4"
+          :max="unlocked_balance / atomicDivisor"
           placeholder="0"
           borderless
           dense
@@ -122,7 +122,7 @@ export default {
         // the min and max are for that particular SN,
         // start at min/max for the wallet
         minStakeAmount: 0,
-        maxStakeAmount: this.unlocked_balance / 1e4
+        maxStakeAmount: 0
       },
       confirmFields: {
         isBlink: false,
@@ -141,6 +141,7 @@ export default {
       sweep_all_status: state => state.gateway.sweep_all_status,
       award_address: state => state.gateway.wallet.info.address,
       confirmSweepAll: state => state.gateway.sweep_all_status.code === 1,
+      netType: state => state.gateway.app.config.app?.net_type || "mainnet",
       is_ready() {
         return this.$store.getters["gateway/isReady"];
       },
@@ -202,6 +203,10 @@ export default {
         return nodesForContribution;
       }
     }),
+    // Legacy network uses 1e4 (4 decimal places), new mainnet/testnet use 1e9
+    atomicDivisor() {
+      return this.netType === "legacy" ? 1e4 : 1e9;
+    },
     stakeStatusCode() {
       return this.stake_status ? this.stake_status.code : 0;
     },
@@ -383,7 +388,7 @@ export default {
       const { unlocked_balance } = this.info;
 
       const tx = {
-        amount: unlocked_balance / 1e4,
+        amount: unlocked_balance / this.atomicDivisor,
         address: this.award_address,
         priority: 0
       };
@@ -439,7 +444,7 @@ export default {
           message: this.$t("notification.errors.zeroAmount")
         });
         return;
-      } else if (this.service_node.amount > this.unlocked_balance / 1e4) {
+      } else if (this.service_node.amount > this.unlocked_balance / this.atomicDivisor) {
         this.$q.notify({
           type: "negative",
           timeout: 1000,

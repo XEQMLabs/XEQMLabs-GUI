@@ -14,7 +14,7 @@
             }}</q-item-label>
           </q-item>
           <q-item v-close-popup clickable @click="openSettings">
-            <q-item-label header>{{ $t("menuItems.settings") }}</q-item-label>
+            <q-item-label header>Network Settings</q-item-label>
           </q-item>
           <q-item v-close-popup clickable @click="showAbout(true)">
             <q-item-label header>{{ $t("menuItems.about") }}</q-item-label>
@@ -32,7 +32,7 @@
 
         <p class="q-my-sm">Wallet Version: v{{ version }}</p>
         <p class="q-my-sm">Daemon Version: v{{ daemonVersion }}</p>
-        <p class="q-my-sm">Copyright (c) 2025, Equilibria</p>
+        <p class="q-my-sm">Copyright (c) 2026, Equilibria</p>
         <p class="q-my-sm">All rights reserved.</p>
 
         <div class="q-mt-md q-mb-lg external-links">
@@ -88,12 +88,27 @@ export default {
     theme: state => state.gateway.app.config.appearance.theme,
     isRPCSyncing: state => state.gateway.wallet.isRPCSyncing,
     daemon: state => state.gateway.daemon,
+    openSettingsRequested: state => state.gateway.app.open_settings_requested,
     daemonVersion() {
       return this.daemon.info.version || "N/A";
     }
   }),
   mounted() {
     this.version = version;
+  },
+  watch: {
+    openSettingsRequested(val) {
+      if (val) {
+        // Open settings modal
+        this.$nextTick(() => {
+          this.$refs.settingsModal.isVisible = true;
+        });
+        // Clear the flag
+        this.$store.commit("gateway/set_app_data", {
+          open_settings_requested: false
+        });
+      }
+    }
   },
   methods: {
     openExternal(url) {

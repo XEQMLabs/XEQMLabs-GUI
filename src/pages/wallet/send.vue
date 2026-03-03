@@ -18,7 +18,7 @@
                 v-model="newTx.amount"
                 type="number"
                 min="0"
-                :max="unlocked_balance / 1e4"
+                :max="unlocked_balance / atomicDivisor"
                 placeholder="0"
                 borderless
                 dense
@@ -26,7 +26,7 @@
               />
               <q-btn
                 color="primary"
-                @click="newTx.amount = unlocked_balance / 1e4"
+                @click="newTx.amount = unlocked_balance / atomicDivisor"
               >
                 {{ $t("buttons.all") }}
               </q-btn>
@@ -185,6 +185,7 @@ export default {
       view_only: state => state.gateway.wallet.info.view_only,
       unlocked_balance: state => state.gateway.wallet.info.unlocked_balance,
       tx_status: state => state.gateway.tx_status,
+      netType: state => state.gateway.app.config.app?.net_type || "mainnet",
       is_ready() {
         return this.$store.getters["gateway/isReady"];
       },
@@ -198,6 +199,10 @@ export default {
       },
       confirmTransaction: state => state.gateway.tx_status.code === 1
     }),
+    // Legacy network uses 1e4 (4 decimal places), new mainnet/testnet use 1e9
+    atomicDivisor() {
+      return this.netType === "legacy" ? 1e4 : 1e9;
+    },
     txStatusCode() {
       return this.tx_status ? this.tx_status.code : DO_NOTHING;
     }
@@ -399,7 +404,7 @@ export default {
           message: this.$t("notification.errors.zeroAmount")
         });
         return;
-      } else if (this.newTx.amount > this.unlocked_balance / 1e4) {
+      } else if (this.newTx.amount > this.unlocked_balance / this.atomicDivisor) {
         this.$q.notify({
           type: "negative",
           timeout: 1000,

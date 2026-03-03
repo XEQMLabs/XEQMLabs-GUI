@@ -354,6 +354,10 @@ footer,
                 color: $warning;
             }
 
+            .offline {
+                color: #FFA726;  // Amber/orange for offline
+            }
+
             .updateRequired {
                 color: $negative;
             }
@@ -389,6 +393,16 @@ footer,
 
         div:last-child {
             background-color: $warning;
+        }
+    }
+
+    .status-bars.offline {
+        div:first-child {
+            background-color: #FFA726;
+        }
+
+        div:last-child {
+            background-color: #FFA726;
         }
     }
 

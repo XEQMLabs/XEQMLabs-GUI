@@ -15,9 +15,11 @@ export class WalletRPC {
     this.wallet_dir = null;
     this.auth = [];
     this.id = 0;
-    this.net_type = "mainnet";
+    this.net_type = "legacy";
     this.heartbeat = null;
     this.onsHeartbeat = null;
+    this.syncPoller = null; // Fast poller for initial sync progress
+    this.isRefreshing = false; // Track if wallet is actively refreshing
     this.wallet_state = {
       open: false,
       name: "",
@@ -65,6 +67,22 @@ export class WalletRPC {
     this.queue = new queue(1, Infinity);
   }
 
+  // Get the correct binary path based on network type
+  getBinaryPath(net_type = null) {
+    const netType = net_type || this.net_type;
+    // Use legacy binaries for legacy network
+    if (netType === "legacy") {
+      return __ryo_bin_legacy;
+    }
+    return __ryo_bin;
+  }
+
+  // Get the atomic unit divisor based on network type
+  // Legacy network uses 1e4 (4 decimal places), new mainnet/testnet use 1e9
+  getAtomicDivisor() {
+    return this.net_type === "legacy" ? 1e4 : 1e9;
+  }
+
   // this function will take an options object for testnet, data-dir, etc
   start(options) {
     const { net_type } = options.app;
@@ -88,16 +106,14 @@ export class WalletRPC {
       this.wallet_data_dir = wallet_data_dir;
 
       this.dirs = {
-        mainnet: this.wallet_data_dir,
+        mainnet: path.join(this.wallet_data_dir, "mainnet"),
         stagenet: path.join(this.wallet_data_dir, "stagenet"),
-        testnet: path.join(this.wallet_data_dir, "testnet")
+        testnet: path.join(this.wallet_data_dir, "testnet"),
+        legacy: path.join(this.wallet_data_dir, "legacy")
       };
 
-      // For remote wallets, use the wallet_data_dir directly (not a subdirectory)
-      // The Docker wallet-rpc uses --wallet-dir=/data, and wallets are directly in that directory
-      // So we read from wallet_data_dir directly to match the Docker volume mount
-      // Ensure we use an absolute path
-      this.wallet_dir = path.resolve(this.wallet_data_dir);
+      // Use network-specific wallet directory (same as local wallet-rpc)
+      this.wallet_dir = path.resolve(this.dirs[net_type]);
 
       // For Docker setups, if wallet_data_dir doesn't exist, try common locations
       if (!this.local && !fs.existsSync(this.wallet_dir)) {
@@ -161,7 +177,7 @@ export class WalletRPC {
           "--rpc-bind-ip",
           "127.0.0.1",
           "--log-level",
-          options.wallet.log_level
+          "1"  // Normal logging (0=warning, 1=info, 2=debug)
         ];
 
         const { net_type, wallet_data_dir, data_dir } = options.app;
@@ -170,37 +186,41 @@ export class WalletRPC {
         this.wallet_data_dir = wallet_data_dir;
 
         this.dirs = {
-          mainnet: this.wallet_data_dir,
+          mainnet: path.join(this.wallet_data_dir, "mainnet"),
           stagenet: path.join(this.wallet_data_dir, "stagenet"),
-          testnet: path.join(this.wallet_data_dir, "testnet")
+          testnet: path.join(this.wallet_data_dir, "testnet"),
+          legacy: path.join(this.wallet_data_dir, "legacy")
         };
 
-        // Use wallet_data_dir directly (which should be the wallets folder in project root)
-        // Don't create subdirectories like testnet/wallets, just use the wallets folder directly
-        // Ensure we use an absolute path for wallet-rpc
-        this.wallet_dir = path.resolve(this.wallet_data_dir);
+        // Use network-specific wallet directory
+        // Mainnet wallets go in wallet_data_dir/mainnet
+        // Testnet wallets go in wallet_data_dir/testnet
+        // Legacy wallets go in wallet_data_dir/legacy
+        this.wallet_dir = path.resolve(this.dirs[net_type]);
         args.push("--wallet-dir", this.wallet_dir);
 
-        const log_file = path.join(
-          this.dirs[net_type],
-          "logs",
-          "wallet-rpc.log"
-        );
+        // Ensure wallet directory and logs subdirectory exist
+        if (!fs.existsSync(this.wallet_dir)) {
+          fs.mkdirpSync(this.wallet_dir);
+        }
+        const logs_dir = path.join(this.dirs[net_type], "logs");
+        if (!fs.existsSync(logs_dir)) {
+          fs.mkdirpSync(logs_dir);
+        }
+
+        const log_file = path.join(logs_dir, "wallet-rpc.log");
         args.push("--log-file", log_file);
 
+        // Add network flags - legacy uses no flag (it's mainnet on the old chain)
         if (net_type === "testnet") {
           args.push("--testnet");
         } else if (net_type === "stagenet") {
           args.push("--stagenet");
         }
+        // Note: legacy and mainnet don't need network flags
 
         if (fs.existsSync(log_file)) {
           fs.truncateSync(log_file, 0);
-        }
-
-        // Ensure wallet directory exists
-        if (!fs.existsSync(this.wallet_dir)) {
-          fs.mkdirpSync(this.wallet_dir);
         }
 
         // Log the wallet directory for debugging
@@ -224,20 +244,22 @@ export class WalletRPC {
         this.rpcArgs = args;
 
         // Try .exe first on Windows, then without extension
+        // Use correct binary path based on network type
+        const binPath = this.getBinaryPath(net_type);
         let rpcPath;
         if (process.platform === "win32") {
-          rpcPath = path.join(__ryo_bin, "xeq-wallet-rpc.exe");
+          rpcPath = path.join(binPath, "xeq-wallet-rpc.exe");
           if (!fs.existsSync(rpcPath)) {
-            rpcPath = path.join(__ryo_bin, "xeq-wallet-rpc");
+            rpcPath = path.join(binPath, "xeq-wallet-rpc");
           }
         } else {
-          rpcPath = path.join(__ryo_bin, "xeq-wallet-rpc");
+          rpcPath = path.join(binPath, "xeq-wallet-rpc");
         }
 
         this.backend.sendLog("info", `Looking for wallet-rpc at: ${rpcPath}`);
         this.backend.sendLog(
           "info",
-          `Binary directory (__ryo_bin): ${__ryo_bin}`
+          `Binary directory: ${binPath}`
         );
 
         if (!fs.existsSync(rpcPath)) {
@@ -262,12 +284,22 @@ export class WalletRPC {
           .catch(() => "closed")
           .then(status => {
             if (status === "closed") {
-              const options =
-                process.platform === "win32" ? {} : { detached: true };
+              const pathSep = process.platform === "win32" ? ";" : ":";
+              const spawnOptions =
+                process.platform === "win32"
+                  ? {
+                      cwd: binPath,
+                      env: { ...process.env, PATH: `${binPath}${pathSep}${process.env.PATH}` }
+                    }
+                  : {
+                      detached: true,
+                      cwd: binPath,
+                      env: { ...process.env, PATH: `${binPath}${pathSep}${process.env.PATH}` }
+                    };
               this.walletRPCProcess = child_process.spawn(
                 rpcPath,
                 args,
-                options
+                spawnOptions
               );
 
               this.walletRPCProcess.stdout.on("data", data => {
@@ -281,32 +313,36 @@ export class WalletRPC {
                   const trimmed = line.trim();
                   if (trimmed.length === 0) continue;
 
-                  // Forward wallet-rpc process output to troubleshooting logs
+                  // Forward important wallet-rpc output to troubleshooting logs
                   // Parse log level from lines like "2026-02-23 15:39:42.710 E ..."
                   const levelMatch = trimmed.match(
                     /^\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2}\.\d+\s+([EWID])\s+/
                   );
                   if (levelMatch) {
                     const lvl = levelMatch[1];
-                    const logLevel =
-                      lvl === "E" ? "error" : lvl === "W" ? "warn" : "info";
-                    this.backend.sendLog(logLevel, `[wallet-rpc] ${trimmed}`);
+                    // Only log errors and warnings, skip routine INFO messages
+                    if (lvl === "E") {
+                      this.backend.sendLog("error", `[wallet-rpc] ${trimmed}`);
+                    } else if (lvl === "W") {
+                      this.backend.sendLog("warn", `[wallet-rpc] ${trimmed}`);
+                    } else if (lvl === "I" && (
+                      trimmed.includes("Refresh done") ||
+                      trimmed.includes("Received money") ||
+                      trimmed.includes("Spent money") ||
+                      (trimmed.includes("balance") && !trimmed.includes("Calling RPC method"))
+                    )) {
+                      // Only log important INFO messages, exclude RPC call spam
+                      this.backend.sendLog("info", `[wallet-rpc] ${trimmed}`);
+                    }
                   } else if (
                     trimmed.includes("Equilibria") ||
                     trimmed.includes("THROW EXCEPTION") ||
                     trimmed.includes("Logging to") ||
                     trimmed.includes("Binding on") ||
                     trimmed.includes("wallet RPC server") ||
-                    trimmed.includes("Loaded wallet") ||
-                    trimmed.includes("Received money") ||
-                    trimmed.includes("Spent money") ||
-                    trimmed.includes("Error") ||
-                    trimmed.includes("error")
+                    trimmed.includes("Loaded wallet")
                   ) {
-                    const isErr =
-                      trimmed.includes("THROW EXCEPTION") ||
-                      trimmed.includes("Error") ||
-                      trimmed.includes("error");
+                    const isErr = trimmed.includes("THROW EXCEPTION");
                     this.backend.sendLog(
                       isErr ? "error" : "info",
                       `[wallet-rpc] ${trimmed}`
@@ -1084,6 +1120,58 @@ export class WalletRPC {
       }
       this.backend.sendLog("info", `Wallet "${filename}" opened successfully`);
 
+      // If daemon is connected, trigger a refresh to sync with the network
+      // Note: wallet-rpc is already started with --daemon-address, so no need to call set_daemon
+      if (this.backend.daemon && this.backend.config_data) {
+        this.backend.send("show_notification", {
+          type: "info",
+          color: "cyan",
+          textColor: "dark",
+          message: "Wallet opened! Syncing with network...",
+          timeout: 10000
+        });
+
+        // Check wallet height and refresh if needed
+        this.sendRPC("getheight", {}, 5000).then(heightResult => {
+          const walletHeight = heightResult.result?.height || 0;
+          this.backend.sendLog("info", `Wallet height on open: ${walletHeight}`);
+
+          // If wallet is at a very low height, do a full refresh from block 0
+          if (walletHeight < 100) {
+            this.backend.sendLog("info", "Wallet needs full sync - calling refresh with start_height=0...");
+            this.isRefreshing = true;
+            const startTime = Date.now();
+            this.sendRPC("refresh", { start_height: 0 }, 600000).then(refreshResult => {
+              this.isRefreshing = false;
+              const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+              const blocks = refreshResult.result?.blocks_fetched || 0;
+              this.backend.sendLog("info", `Refresh completed in ${elapsed}s - blocks: ${blocks}, full result: ${JSON.stringify(refreshResult)}`);
+
+              // Get balance after refresh
+              this.sendRPC("getbalance", { account_index: 0 }, 10000).then(balResult => {
+                const bal = balResult.result?.balance || 0;
+                const unlocked = balResult.result?.unlocked_balance || 0;
+                this.backend.sendLog("info", `Balance after refresh: ${(bal/1e9).toFixed(4)} XEQ (unlocked: ${(unlocked/1e9).toFixed(4)} XEQ)`);
+                this.wallet_state.balance = bal;
+                this.wallet_state.unlocked_balance = unlocked;
+                this.sendGateway("set_wallet_data", { info: { balance: bal, unlocked_balance: unlocked } });
+              });
+            }).catch(err => {
+              this.isRefreshing = false;
+              this.backend.sendLog("warn", `Refresh failed: ${err.message || err}`);
+            });
+          } else {
+            this.backend.sendLog("info", `Wallet already at height ${walletHeight}, doing quick refresh...`);
+            this.sendRPC("refresh", {}, 60000).then(refreshResult => {
+              const blocks = refreshResult.result?.blocks_fetched || 0;
+              this.backend.sendLog("info", `Quick refresh done - ${blocks} blocks`);
+            });
+          }
+        }).catch(err => {
+          this.backend.sendLog("warn", `getheight failed: ${err.message || err}`);
+        });
+      }
+
       let address_txt_path = path.join(
         this.wallet_dir,
         filename + ".address.txt"
@@ -1157,6 +1245,63 @@ export class WalletRPC {
       this.updateLocalONSRecords();
     }, 30 * 1000 * multiplier); // Every 30 seconds
     this.updateLocalONSRecords();
+
+    // Start fast sync polling for initial wallet sync
+    this.startSyncPoller();
+  }
+
+  // Fast polling for sync progress - runs every 1 second during initial sync
+  startSyncPoller() {
+    clearInterval(this.syncPoller);
+    this.syncPollerActive = true;
+    this.lastSyncHeight = 0;
+    this.syncStableCount = 0;
+
+    this.syncPoller = setInterval(() => {
+      if (!this.syncPollerActive) {
+        clearInterval(this.syncPoller);
+        return;
+      }
+
+      // Only poll height quickly during sync
+      this.sendRPC("getheight", {}, 3000).then(data => {
+        if (data.hasOwnProperty("error") || !data.hasOwnProperty("result")) {
+          return;
+        }
+
+        const height = data.result.height;
+
+        // Send height update to UI
+        this.sendGateway("set_wallet_data", {
+          info: { height }
+        });
+
+        // Track if height has stabilized (not changing = sync complete)
+        // But only consider sync complete if we're at a reasonable height (> 1000)
+        // And not while refresh is in progress
+        if (height === this.lastSyncHeight && !this.isRefreshing) {
+          this.syncStableCount++;
+          // If height stable for 5 polls (5 seconds) AND at a reasonable height, assume sync complete
+          if (this.syncStableCount >= 5 && height > 1000) {
+            this.stopSyncPoller();
+            this.backend.sendLog("info", `Wallet sync complete at height ${height}`);
+          }
+        } else {
+          this.syncStableCount = 0;
+          this.lastSyncHeight = height;
+        }
+      });
+    }, 1000); // Poll every 1 second
+
+    this.backend.sendLog("info", "Started fast sync polling");
+  }
+
+  stopSyncPoller() {
+    if (this.syncPoller) {
+      clearInterval(this.syncPoller);
+      this.syncPoller = null;
+    }
+    this.syncPollerActive = false;
   }
 
   heartbeatAction(extended = false) {
@@ -1230,6 +1375,16 @@ export class WalletRPC {
             }
           });
         } else if (n.method == "getbalance") {
+          // Log raw balance from RPC for debugging
+          const rawBal = n.result.balance;
+          const rawUnlocked = n.result.unlocked_balance;
+          if (this.heartbeatCount <= 3 || rawBal !== this.wallet_state.balance) {
+            this.backend.sendLog(
+              "info",
+              `[getbalance RPC] raw balance: ${rawBal} (${(rawBal / this.getAtomicDivisor()).toFixed(4)} XEQ), unlocked: ${rawUnlocked} (${(rawUnlocked / this.getAtomicDivisor()).toFixed(4)} XEQ)`
+            );
+          }
+
           if (
             this.wallet_state.balance == n.result.balance &&
             this.wallet_state.unlocked_balance == n.result.unlocked_balance &&
@@ -1247,6 +1402,10 @@ export class WalletRPC {
             n.result.accrued_balance;
           this.wallet_state.accrued_balance_next_payout = wallet.info.accrued_balance_next_payout =
             n.result.accrued_balance_next_payout;
+
+          // Debug: log what we're sending to the gateway
+          console.log(`[WalletRPC] Sending balance to gateway: ${wallet.info.balance} (${(wallet.info.balance/1e9).toFixed(4)} XEQ)`);
+
           this.sendGateway("set_wallet_data", {
             info: wallet.info
           });
@@ -1268,11 +1427,17 @@ export class WalletRPC {
       }
 
       if (this.heartbeatCount % 6 === 1 && wallet.info.height !== undefined) {
+        const bal = this.wallet_state.balance;
+        const unlocked = this.wallet_state.unlocked_balance;
+        const divisor = this.getAtomicDivisor();
+        // Convert from atomic units (legacy: 1e4, mainnet: 1e9)
+        const balXEQ = bal !== null ? (bal / divisor).toFixed(4) : "null";
+        const unlockedXEQ = unlocked !== null ? (unlocked / divisor).toFixed(4) : "null";
         this.backend.sendLog(
           "info",
           `Wallet status — height: ${wallet.info.height}, syncing: ${
             this.isRPCSyncing ? "yes" : "no"
-          }`
+          }, balance: ${balXEQ} XEQ, unlocked: ${unlockedXEQ} XEQ`
         );
       }
 
@@ -1791,7 +1956,7 @@ export class WalletRPC {
           return;
         }
 
-        amount = (parseFloat(amount) * 1e4).toFixed(0);
+        amount = (parseFloat(amount) * this.getAtomicDivisor()).toFixed(0);
 
         this.sendRPC("stake", {
           amount,
@@ -2192,7 +2357,7 @@ export class WalletRPC {
         return;
       }
 
-      amount = (parseFloat(amount) * 1e4).toFixed(0);
+      amount = (parseFloat(amount) * this.getAtomicDivisor()).toFixed(0);
 
       const isSweepAllRPC = amount == this.wallet_state.unlocked_balance;
       const rpc_endpoint = isSweepAllRPC ? "sweep_all" : "transfer_split";
@@ -2558,7 +2723,25 @@ export class WalletRPC {
   }
 
   rescanBlockchain() {
-    this.sendRPC("rescan_blockchain");
+    this.backend.sendLog("info", "Starting blockchain rescan from block 0...");
+    this.backend.send("show_notification", {
+      type: "info",
+      color: "cyan",
+      textColor: "dark",
+      message: "Rescanning blockchain - this may take a while...",
+      timeout: 10000
+    });
+    this.sendRPC("rescan_blockchain", {}, 600000).then(result => {
+      if (result.hasOwnProperty("error")) {
+        this.backend.sendLog("error", `Rescan failed: ${result.error.message || JSON.stringify(result.error)}`);
+      } else {
+        this.backend.sendLog("info", "Blockchain rescan complete");
+        // Force balance refresh
+        this.wallet_state.balance = null;
+        this.wallet_state.unlocked_balance = null;
+        this.heartbeatAction(true);
+      }
+    });
   }
 
   rescanSpent() {
@@ -2612,6 +2795,7 @@ export class WalletRPC {
     // Stop all heartbeats and abandon the stuck RPC queue
     clearInterval(this.heartbeat);
     clearInterval(this.onsHeartbeat);
+    this.stopSyncPoller();
     this.queue = new queue(1, Infinity);
 
     this.sendGateway("set_wallet_data", {
@@ -2694,30 +2878,35 @@ export class WalletRPC {
           const trimmed = line.trim();
           if (trimmed.length === 0) continue;
 
+          // Forward important wallet-rpc output to troubleshooting logs
           const levelMatch = trimmed.match(
             /^\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2}\.\d+\s+([EWID])\s+/
           );
           if (levelMatch) {
             const lvl = levelMatch[1];
-            const logLevel =
-              lvl === "E" ? "error" : lvl === "W" ? "warn" : "info";
-            this.backend.sendLog(logLevel, `[wallet-rpc] ${trimmed}`);
+            // Only log errors and warnings, skip routine INFO messages
+            if (lvl === "E") {
+              this.backend.sendLog("error", `[wallet-rpc] ${trimmed}`);
+            } else if (lvl === "W") {
+              this.backend.sendLog("warn", `[wallet-rpc] ${trimmed}`);
+            } else if (lvl === "I" && (
+              trimmed.includes("Refresh done") ||
+              trimmed.includes("Received money") ||
+              trimmed.includes("Spent money") ||
+              (trimmed.includes("balance") && !trimmed.includes("Calling RPC method"))
+            )) {
+              // Only log important INFO messages, exclude RPC call spam
+              this.backend.sendLog("info", `[wallet-rpc] ${trimmed}`);
+            }
           } else if (
             trimmed.includes("Equilibria") ||
             trimmed.includes("THROW EXCEPTION") ||
             trimmed.includes("Logging to") ||
             trimmed.includes("Binding on") ||
             trimmed.includes("wallet RPC server") ||
-            trimmed.includes("Loaded wallet") ||
-            trimmed.includes("Received money") ||
-            trimmed.includes("Spent money") ||
-            trimmed.includes("Error") ||
-            trimmed.includes("error")
+            trimmed.includes("Loaded wallet")
           ) {
-            const isErr =
-              trimmed.includes("THROW EXCEPTION") ||
-              trimmed.includes("Error") ||
-              trimmed.includes("error");
+            const isErr = trimmed.includes("THROW EXCEPTION");
             this.backend.sendLog(
               isErr ? "error" : "info",
               `[wallet-rpc] ${trimmed}`
@@ -3395,111 +3584,42 @@ export class WalletRPC {
     this.listWallets();
   }
 
-  listWallets(legacy = false) {
-    let wallets = {
-      list: [],
-      directories: []
-    };
+  // Helper function to scan a directory for wallets
+  _scanWalletDirectory(dir_to_scan, net_type) {
+    let wallets = [];
+    let directories = [];
 
-    let wallet_dir_to_scan = this.wallet_dir;
-
-    // If wallet_dir doesn't exist or isn't a directory, try to find wallets in common locations
-    // This works for both local and remote wallets
-    if (
-      !wallet_dir_to_scan ||
-      !fs.existsSync(wallet_dir_to_scan) ||
-      !fs.statSync(wallet_dir_to_scan).isDirectory()
-    ) {
-      const commonPaths = [
-        path.join(process.cwd(), "wallets"), // Project root: ./wallets (highest priority)
-        path.join(os.homedir(), "wallets"), // ~/wallets
-        path.join(os.homedir(), "Documents", "wallets"), // Windows: Documents/wallets
-        path.join(os.homedir(), "Equilibria", "wallets") // ~/Equilibria/wallets
-      ];
-
-      for (const commonPath of commonPaths) {
-        if (
-          fs.existsSync(commonPath) &&
-          fs.statSync(commonPath).isDirectory()
-        ) {
-          try {
-            const files = fs.readdirSync(commonPath);
-            // Check if this directory has any .keys files (wallet files)
-            const hasWallets = files.some(f => f.endsWith(".keys"));
-            if (hasWallets || files.length > 0) {
-              wallet_dir_to_scan = commonPath;
-              // Update this.wallet_dir so future operations use the correct path
-              if (!this.wallet_dir || !fs.existsSync(this.wallet_dir)) {
-                this.wallet_dir = commonPath;
-                console.log(
-                  `[WalletRPC] Auto-detected wallet directory: ${this.wallet_dir}`
-                );
-              }
-              break;
-            }
-          } catch (e) {
-            // Continue to next path
-          }
-        }
-      }
-
-      // If still no valid directory found, default to wallets in project root
-      if (!wallet_dir_to_scan || !fs.existsSync(wallet_dir_to_scan)) {
-        wallet_dir_to_scan = path.join(process.cwd(), "wallets");
-        // Create it if it doesn't exist
-        if (!fs.existsSync(wallet_dir_to_scan)) {
-          fs.mkdirpSync(wallet_dir_to_scan);
-        }
-        this.wallet_dir = wallet_dir_to_scan;
-        console.log(
-          `[WalletRPC] Using default wallet directory: ${this.wallet_dir}`
-        );
-      }
+    if (!dir_to_scan || !fs.existsSync(dir_to_scan)) {
+      return { wallets, directories };
     }
 
     let walletFiles = [];
     try {
-      walletFiles = fs.readdirSync(wallet_dir_to_scan);
-      console.log(`[WalletRPC] Scanning for wallets in: ${wallet_dir_to_scan}`);
+      walletFiles = fs.readdirSync(dir_to_scan);
+      console.log(`[WalletRPC] Scanning ${net_type} wallets in: ${dir_to_scan}`);
       console.log(`[WalletRPC] Found ${walletFiles.length} files/directories`);
     } catch (e) {
-      console.error(
-        `[WalletRPC] Error reading wallet directory ${wallet_dir_to_scan}:`,
-        e
-      );
-      this.sendGateway("show_notification", {
-        type: "negative",
-        i18n: "notification.errors.failedWalletRead",
-        timeout: 2000
-      });
-      return;
+      console.error(`[WalletRPC] Error reading wallet directory ${dir_to_scan}:`, e);
+      return { wallets, directories };
     }
 
     walletFiles.forEach(filename => {
       try {
-        switch (filename) {
-          case ".DS_Store":
-          case ".DS_Store?":
-          case "._.DS_Store":
-          case ".Spotlight-V100":
-          case ".Trashes":
-          case "ehthumbs.db":
-          case "Thumbs.db":
-          case "old-gui":
-            return;
+        // Skip system files and special directories
+        if ([".DS_Store", ".DS_Store?", "._.DS_Store", ".Spotlight-V100",
+             ".Trashes", "ehthumbs.db", "Thumbs.db", "old-gui", "testnet", "stagenet", "legacy", "mainnet"].includes(filename)) {
+          return;
         }
 
-        // If it's a directory then check if it's an old gui wallet
-        const name = path.join(wallet_dir_to_scan, filename);
+        const name = path.join(dir_to_scan, filename);
         const stat = fs.statSync(name);
+
         if (stat.isDirectory()) {
-          // Make sure the directory has keys file
+          // Check if it's an old gui wallet
           const wallet_file = path.join(name, filename);
           const key_file = wallet_file + ".keys";
-
-          // If we have them then it is an old gui wallet
           if (fs.existsSync(key_file)) {
-            wallets.directories.push(filename);
+            directories.push(filename);
           }
           return;
         }
@@ -3514,50 +3634,90 @@ export class WalletRPC {
           name: wallet_name,
           address: null,
           password_protected: null,
-          hardware_wallet: false
+          hardware_wallet: false,
+          net_type: net_type  // Add network type to wallet data
         };
 
-        if (
-          fs.existsSync(
-            path.join(wallet_dir_to_scan, wallet_name + ".meta.json")
-          )
-        ) {
-          let meta = fs.readFileSync(
-            path.join(wallet_dir_to_scan, wallet_name + ".meta.json"),
-            "utf8"
-          );
+        // Read metadata
+        if (fs.existsSync(path.join(dir_to_scan, wallet_name + ".meta.json"))) {
+          let meta = fs.readFileSync(path.join(dir_to_scan, wallet_name + ".meta.json"), "utf8");
           if (meta) {
             meta = JSON.parse(meta);
             wallet_data.address = meta.address;
             wallet_data.password_protected = meta.password_protected;
           }
-        } else if (
-          fs.existsSync(
-            path.join(wallet_dir_to_scan, wallet_name + ".address.txt")
-          )
-        ) {
-          let address = fs.readFileSync(
-            path.join(wallet_dir_to_scan, wallet_name + ".address.txt"),
-            "utf8"
-          );
+        } else if (fs.existsSync(path.join(dir_to_scan, wallet_name + ".address.txt"))) {
+          let address = fs.readFileSync(path.join(dir_to_scan, wallet_name + ".address.txt"), "utf8");
           if (address) {
             wallet_data.address = address;
           }
         }
 
-        if (
-          fs.existsSync(
-            path.join(wallet_dir_to_scan, wallet_name + ".hwdev.txt")
-          )
-        ) {
+        if (fs.existsSync(path.join(dir_to_scan, wallet_name + ".hwdev.txt"))) {
           wallet_data.hardware_wallet = true;
         }
 
-        wallets.list.push(wallet_data);
+        wallets.push(wallet_data);
       } catch (e) {
         // Something went wrong
       }
     });
+
+    return { wallets, directories };
+  }
+
+  listWallets(legacy = false) {
+    let wallets = {
+      list: [],
+      directories: []
+    };
+
+    // Use wallet_data_dir as the base (e.g., wallets/)
+    // Network-specific folders are wallets/mainnet, wallets/testnet, etc.
+    let base_wallet_dir = this.wallet_data_dir;
+
+    if (!base_wallet_dir) {
+      base_wallet_dir = path.join(process.cwd(), "wallets");
+    }
+
+    // Ensure base directory exists
+    if (!fs.existsSync(base_wallet_dir)) {
+      fs.mkdirpSync(base_wallet_dir);
+    }
+
+    // Scan mainnet wallets (wallets/mainnet)
+    const mainnetDir = path.join(base_wallet_dir, "mainnet");
+    if (!fs.existsSync(mainnetDir)) {
+      fs.mkdirpSync(mainnetDir);
+    }
+    const mainnetResult = this._scanWalletDirectory(mainnetDir, "mainnet");
+    wallets.list.push(...mainnetResult.wallets);
+    wallets.directories.push(...mainnetResult.directories);
+
+    // Scan testnet wallets (wallets/testnet)
+    const testnetDir = path.join(base_wallet_dir, "testnet");
+    if (!fs.existsSync(testnetDir)) {
+      fs.mkdirpSync(testnetDir);
+    }
+    const testnetResult = this._scanWalletDirectory(testnetDir, "testnet");
+    wallets.list.push(...testnetResult.wallets);
+
+    // Scan stagenet wallets (wallets/stagenet) - just in case
+    const stagenetDir = path.join(base_wallet_dir, "stagenet");
+    if (fs.existsSync(stagenetDir)) {
+      const stagenetResult = this._scanWalletDirectory(stagenetDir, "stagenet");
+      wallets.list.push(...stagenetResult.wallets);
+    }
+
+    // Scan legacy wallets (wallets/legacy)
+    const legacyDir = path.join(base_wallet_dir, "legacy");
+    if (!fs.existsSync(legacyDir)) {
+      fs.mkdirpSync(legacyDir);
+    }
+    const legacyResult = this._scanWalletDirectory(legacyDir, "legacy");
+    wallets.list.push(...legacyResult.wallets);
+
+    console.log(`[WalletRPC] Total wallets found: ${wallets.list.length}`);
 
     // Check for legacy wallet files
     if (legacy) {
@@ -3731,6 +3891,7 @@ export class WalletRPC {
   async closeWallet() {
     clearInterval(this.heartbeat);
     clearInterval(this.onsHeartbeat);
+    this.stopSyncPoller();
     this.wallet_state = {
       open: false,
       name: "",
@@ -3757,6 +3918,30 @@ export class WalletRPC {
       return;
     }
     this.backend.send(method, data);
+  }
+
+  // Update the daemon address for the wallet-rpc (used when manually changing daemon)
+  setDaemon(host, port) {
+    const address = `${host}:${port}`;
+    console.log(`[WalletRPC] Setting daemon address to: ${address}`);
+    this.backend.sendLog("info", `Updating wallet daemon to: ${address}`);
+
+    return this.sendRPC("set_daemon", {
+      address: address,
+      trusted: false
+    }).then(data => {
+      if (data.hasOwnProperty("error")) {
+        console.log(`[WalletRPC] set_daemon error:`, data.error);
+        this.backend.sendLog("warn", `Failed to set daemon: ${data.error.message || "unknown error"}`);
+        return false;
+      }
+      console.log(`[WalletRPC] Daemon address updated successfully`);
+      this.backend.sendLog("info", `Wallet daemon updated to ${address}`);
+      return true;
+    }).catch(err => {
+      console.log(`[WalletRPC] set_daemon exception:`, err);
+      return false;
+    });
   }
 
   sendRPC(method, params = {}, timeout = 0) {

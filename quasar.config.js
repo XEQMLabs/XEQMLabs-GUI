@@ -122,10 +122,10 @@ export default configure(function () {
 
       builder: {
         npmRebuild: false,
-        appId: "com.xeq.legacy-wallet",
-        productName: "Legacy XEQ GUI",
-        copyright: "Copyright © 2025 XEQ",
-        artifactName: "Legacy-XEQ-GUI-${version}-${os}.${ext}",
+        appId: "com.equilibria.xeq-wallet",
+        productName: "XEQ GUI",
+        copyright: "Copyright © 2026 Equilibria",
+        artifactName: "XEQ-GUI-${version}-${os}.${ext}",
 
         win: {
           target: [
@@ -139,7 +139,7 @@ export default configure(function () {
             }
           ],
           icon: "src-electron/icons/icon_512x512.png",
-          publisherName: "XEQ"
+          publisherName: "Equilibria"
         },
 
         nsis: {
@@ -147,11 +147,11 @@ export default configure(function () {
           allowToChangeInstallationDirectory: true,
           createDesktopShortcut: true,
           createStartMenuShortcut: true,
-          shortcutName: "Legacy XEQ GUI"
+          shortcutName: "XEQ GUI"
         },
 
         portable: {
-          artifactName: "Legacy-XEQ-GUI-${version}-Windows-Portable.exe"
+          artifactName: "XEQ-GUI-${version}-Windows-Portable.exe"
         },
 
         linux: {
@@ -205,7 +205,7 @@ export default configure(function () {
           "!data/**"
         ],
 
-        extraResources: ["bin"]
+        extraResources: ["bin", "bin-legacy"]
       }
     }
   };

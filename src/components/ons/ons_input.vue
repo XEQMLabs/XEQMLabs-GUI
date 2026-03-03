@@ -40,20 +40,25 @@ export default {
       theme: state => state.gateway.app.config.appearance.theme,
       ons_status: state => state.gateway.ons_status,
       unlocked_balance: state => state.gateway.wallet.info.unlocked_balance,
-      disable_submit_button() {
-        const minBalance = this.updating ? 0.05 : 7.1;
-        return this.unlocked_balance < minBalance * 1e4;
-      },
-      submit_label() {
-        let label = "buttons.purchase";
-        if (this.updating) {
-          label = "buttons.update";
-        } else if (this.renewing) {
-          label = "buttons.renew";
-        }
-        return this.$t(label);
-      }
+      netType: state => state.gateway.app.config.app?.net_type || "mainnet"
     }),
+    // Legacy network uses 1e4 (4 decimal places), new mainnet/testnet use 1e9
+    atomicDivisor() {
+      return this.netType === "legacy" ? 1e4 : 1e9;
+    },
+    disable_submit_button() {
+      const minBalance = this.updating ? 0.05 : 7.1;
+      return this.unlocked_balance < minBalance * this.atomicDivisor;
+    },
+    submit_label() {
+      let label = "buttons.purchase";
+      if (this.updating) {
+        label = "buttons.update";
+      } else if (this.renewing) {
+        label = "buttons.renew";
+      }
+      return this.$t(label);
+    },
     onsStatusCode() {
       return this.ons_status ? this.ons_status.code : 0;
     }

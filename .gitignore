@@ -25,9 +25,11 @@ yarn-error.log*
 .\#*
 *.bak
 
-# bin dir
+# bin directories
 bin/*
 !bin/.gitkeep
+bin-legacy/*
+!bin-legacy/.gitkeep
 
 # Environment files
 .env

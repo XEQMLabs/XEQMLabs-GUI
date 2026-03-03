@@ -1,4 +1,11 @@
 export default {
+  computed: {
+    // Legacy network uses 1e4 (4 decimal places), new mainnet/testnet use 1e9
+    atomicDivisor() {
+      const netType = this.$store?.state?.gateway?.app?.config?.app?.net_type || "mainnet";
+      return netType === "legacy" ? 1e4 : 1e9;
+    }
+  },
   methods: {
     // Returns the atomic, unfilled, reserved contributions for the given wallet
     getUnfilledReservedContribution(node, addr) {
@@ -43,7 +50,7 @@ export default {
           (MAX_NUMBER_OF_CONTRIBUTORS - contributors_length);
       }
 
-      const minContributionOxen = minContributionAtomicUnits / 1e4;
+      const minContributionOxen = minContributionAtomicUnits / this.atomicDivisor;
       // ceiling to 4 decimal places
       return minContributionOxen.toFixed(4);
     },
@@ -61,7 +68,7 @@ export default {
       return openContributionRemaining;
     },
     openForContributionOxen(node, addr = null) {
-      return (this.openForContribution(node, addr) / 1e4).toFixed(4);
+      return (this.openForContribution(node, addr) / this.atomicDivisor).toFixed(4);
     }
   }
 };

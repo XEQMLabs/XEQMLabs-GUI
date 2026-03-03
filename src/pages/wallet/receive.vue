@@ -96,18 +96,6 @@ import ReceiveItem from "components/receive_item";
 import ContextMenu from "components/menus/contextmenu";
 
 export default {
-  filters: {
-    toString: function(value) {
-      if (typeof value !== "number") return "N/A";
-      return String(value);
-    },
-    currency: function(value) {
-      if (typeof value !== "number") return "N/A";
-
-      const amount = value / 1e4;
-      return amount.toLocaleString();
-    }
-  },
   components: {
     AddressDetails,
     QrcodeVue,

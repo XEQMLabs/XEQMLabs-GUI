@@ -9,7 +9,11 @@ export default {
       }
     },
     pending_config: {},
-    remotes: {}
+    remotes: [],
+    legacyRemotes: [],
+    daemon_connected: false,
+    daemon_connecting: false,
+    open_settings_requested: false
   },
   wallets: {
     list: [],

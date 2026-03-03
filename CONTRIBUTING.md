@@ -1,6 +1,6 @@
-# Contributing to Equilibria Electron GUI Wallet
+# Contributing to XEQ GUI Wallet
 
-Thank you for your interest in contributing to the Equilibria Electron GUI Wallet! This document provides guidelines and instructions for contributing.
+Thank you for your interest in contributing to the XEQ GUI Wallet! This document provides guidelines and instructions for contributing.
 
 ## Code of Conduct
 
@@ -61,8 +61,8 @@ Enhancement suggestions are tracked as GitHub issues. When creating an enhanceme
 1. Clone the repository:
 
 ```bash
-git clone https://github.com/DomXEQ/Legacy-XEQ-GUI.git
-cd Legacy-XEQ-GUI
+git clone https://github.com/DomXEQ/New-XEQ-GUI.git
+cd New-XEQ-GUI
 ```
 
 2. Install dependencies:
@@ -127,4 +127,4 @@ If you have questions about contributing, please:
 2. Open a new issue with the `question` label
 3. Reach out via Telegram: [t.me/XEQCommunity](https://t.me/XEQCommunity)
 
-Thank you for contributing to Legacy XEQ GUI!
+Thank you for contributing to XEQ GUI!

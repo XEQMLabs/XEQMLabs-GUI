@@ -1,5 +1,23 @@
 <template>
   <q-page class="create-wallet">
+    <!-- Network indicator banner -->
+    <q-banner
+      v-if="networkType === 'mainnet'"
+      class="bg-warning text-dark q-mb-sm"
+      icon="info"
+    >
+      <strong>Creating Mainnet Wallet (Offline)</strong><br />
+      Mainnet is not yet live. Your wallet will be ready when the network launches.
+    </q-banner>
+    <q-banner
+      v-else-if="networkType === 'testnet'"
+      class="bg-primary text-white q-mb-sm"
+      icon="science"
+    >
+      <strong>Creating Testnet Wallet</strong><br />
+      This wallet is for the testnet network.
+    </q-banner>
+
     <div class="fields q-mx-md q-mt-md">
       <OxenField
         :label="$t('fieldLabels.walletName')"
@@ -113,7 +131,10 @@ export default {
   computed: {
     ...mapState({
       theme: state => state.gateway.app.config.appearance.theme,
-      status: state => state.gateway.wallet.status
+      status: state => state.gateway.wallet.status,
+      networkType: state => state.gateway.app.config.app?.net_type ||
+                           state.gateway.app.pending_config?.app?.net_type ||
+                           "mainnet"
     }),
     statusCode() {
       return this.status ? this.status.code : 1;

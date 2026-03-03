@@ -29,8 +29,10 @@ if (
 if (process.env.PROD) {
   global.__statics = path.join(__dirname, "").replace(/\\/g, "\\\\");
   global.__ryo_bin = path.join(__dirname, "..", "bin").replace(/\\/g, "\\\\");
+  global.__ryo_bin_legacy = path.join(__dirname, "..", "bin-legacy").replace(/\\/g, "\\\\");
 } else {
   global.__ryo_bin = path.join(process.cwd(), "bin").replace(/\\/g, "\\\\");
+  global.__ryo_bin_legacy = path.join(process.cwd(), "bin-legacy").replace(/\\/g, "\\\\");
 }
 
 let mainWindow, backend;
@@ -103,11 +105,16 @@ function createWindow() {
       nodeIntegration: false,
       contextIsolation: true,
       sandbox: false,
-      preload: path.join(
-        __dirname,
-        process.env.QUASAR_ELECTRON_PRELOAD_FOLDER,
-        "electron-preload" + process.env.QUASAR_ELECTRON_PRELOAD_EXTENSION
-      )
+      preload: path.isAbsolute(process.env.QUASAR_ELECTRON_PRELOAD_FOLDER || "")
+        ? path.join(
+            process.env.QUASAR_ELECTRON_PRELOAD_FOLDER,
+            "electron-preload" + process.env.QUASAR_ELECTRON_PRELOAD_EXTENSION
+          )
+        : path.join(
+            __dirname,
+            process.env.QUASAR_ELECTRON_PRELOAD_FOLDER,
+            "electron-preload" + process.env.QUASAR_ELECTRON_PRELOAD_EXTENSION
+          )
     }
   });
 
@@ -195,7 +202,7 @@ function createWindow() {
           dialog
             .showMessageBox(mainWindow, {
               title: "Startup error",
-              message: `Legacy XEQ GUI is already open, or port ${config.port} is in use`,
+              message: `XEQ GUI is already open, or port ${config.port} is in use`,
               type: "error",
               buttons: ["ok"]
             })

@@ -1,12 +1,12 @@
-# Legacy XEQ GUI
+# XEQ GUI
 
-GUI wallet for the legacy XEQ blockchain. Pre-configured with remote nodes, no config required.
+GUI wallet for Equilibria (XEQ). Pre-configured with remote nodes, no config required.
 
 ---
 
 ## Downloads
 
-Head to the [Releases](https://github.com/DomXEQ/Legacy-XEQ-GUI/releases) page and grab the latest version:
+Head to the [Releases](https://github.com/DomXEQ/New-XEQ-GUI/releases) page and grab the latest version.
 
 ---
 

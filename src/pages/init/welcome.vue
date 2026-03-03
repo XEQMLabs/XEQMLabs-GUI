@@ -125,7 +125,7 @@ export default {
   },
   methods: {
     clickNext() {
-      // if the last step i s active, then we want to initialise the config
+      // if the last step is active, then we want to initialise the config
       if (this.step === 2) {
         this.$gateway.send("core", "save_config_init", this.pending_config);
         this.$router.replace({ path: "/" });
@@ -137,7 +137,11 @@ export default {
       this.$refs.stepper.previous();
     },
     onLanguageSelected() {
-      this.clickNext();
+      // Save default config (local node) and go directly to wallet-select
+      // This allows users to create offline wallets without configuring daemon first
+      // Mainnet is offline and testnet has no public remote nodes
+      this.$gateway.send("core", "save_config_init", this.pending_config);
+      this.$router.replace({ path: "/wallet-select" });
     }
   }
 };

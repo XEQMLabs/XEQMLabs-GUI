@@ -158,8 +158,13 @@ export default {
   },
   computed: {
     ...mapState({
-      serviceNodesRaw: state => state.gateway.daemon.service_nodes.nodes || []
+      serviceNodesRaw: state => state.gateway.daemon.service_nodes.nodes || [],
+      netType: state => state.gateway.app.config.app?.net_type || "mainnet"
     }),
+    // Legacy network uses 1e4 (4 decimal places), new mainnet/testnet use 1e9
+    atomicDivisor() {
+      return this.netType === "legacy" ? 1e4 : 1e9;
+    },
     serviceNodes() {
       const now = Math.floor(Date.now() / 1000);
       const uptimeProofWindow = 7200; // 2 hours: node is "active" if it proved recently
@@ -202,9 +207,9 @@ export default {
       const staked = node.total_contributed || 0;
       const stakingRequirement = node.staking_requirement || 0;
 
-      // Convert from atomic units to XEQ (divide by 1e4)
-      const stakedXEQ = Math.round(staked / 1e4);
-      const requiredXEQ = Math.round(stakingRequirement / 1e4);
+      // Convert from atomic units to XEQ (legacy uses 1e4, mainnet uses 1e9)
+      const stakedXEQ = Math.round(staked / this.atomicDivisor);
+      const requiredXEQ = Math.round(stakingRequirement / this.atomicDivisor);
 
       // Return format: "staked/required" (e.g., "10/100" or "100/100")
       if (stakingRequirement === 0) {

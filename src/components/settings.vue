@@ -18,7 +18,9 @@
             />
           </div>
 
+          <!-- Save button hidden - settings are saved via Connect button or quick_save_config
           <q-btn color="primary" :label="$t('buttons.save')" @click="save" />
+          -->
         </q-toolbar>
       </q-header>
       <q-page-container>

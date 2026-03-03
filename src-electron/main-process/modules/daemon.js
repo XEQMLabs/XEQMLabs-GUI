@@ -12,7 +12,7 @@ export class Daemon {
     this.heartbeat = null;
     this.heartbeat_slow = null;
     this.id = 0;
-    this.net_type = "mainnet";
+    this.net_type = "legacy";
     this.local = false; // do we have a local daemon ?
 
     this.agent = new http.Agent({ keepAlive: true, maxSockets: 1 });
@@ -25,27 +25,44 @@ export class Daemon {
     this.PIVOT_BLOCK_TIME = 120;
   }
 
-  checkVersion() {
+  // Get the correct binary path based on network type
+  getBinaryPath(net_type = null) {
+    const netType = net_type || this.net_type;
+    // Use legacy binaries for legacy network
+    if (netType === "legacy") {
+      return __ryo_bin_legacy;
+    }
+    return __ryo_bin;
+  }
+
+  checkVersion(net_type = null) {
+    const binPath = this.getBinaryPath(net_type);
     return new Promise(resolve => {
       if (process.platform === "win32") {
         // Try .exe first, then without extension
-        let xeqd_path = path.join(__ryo_bin, "xeq-d.exe");
+        let xeqd_path = path.join(binPath, "xeq-d.exe");
         if (!fs.existsSync(xeqd_path)) {
-          xeqd_path = path.join(__ryo_bin, "xeq-d");
+          xeqd_path = path.join(binPath, "xeq-d");
         }
         if (!fs.existsSync(xeqd_path)) {
           console.log(`[Daemon] xeq-d not found at: ${xeqd_path}`);
-          console.log(`[Daemon] __ryo_bin is: ${__ryo_bin}`);
+          console.log(`[Daemon] bin path is: ${binPath}`);
           this.backend.sendLog(
             "warn",
-            `xeq-d not found at: ${xeqd_path} (bin dir: ${__ryo_bin})`
+            `xeq-d not found at: ${xeqd_path} (bin dir: ${binPath})`
           );
           resolve(false);
           return;
         }
         console.log(`[Daemon] Found xeq-d at: ${xeqd_path}`);
         let xeqd_version_cmd = `"${xeqd_path}" --version`;
-        child_process.exec(xeqd_version_cmd, (error, stdout) => {
+        // Add common DLL locations to PATH (Git's mingw64 for OpenSSL, etc.)
+        const gitMingw = "C:\\Program Files\\Git\\mingw64\\bin";
+        const extendedPath = `${binPath};${gitMingw};${process.env.PATH}`;
+        child_process.exec(xeqd_version_cmd, {
+          cwd: binPath,
+          env: { ...process.env, PATH: extendedPath }
+        }, (error, stdout) => {
           if (error) {
             console.log(`[Daemon] Error running xeq-d --version:`, error);
             resolve(false);
@@ -53,13 +70,13 @@ export class Daemon {
           resolve(stdout);
         });
       } else {
-        let xeqd_path = path.join(__ryo_bin, "xeq-d");
+        let xeqd_path = path.join(binPath, "xeq-d");
         let xeqd_version_cmd = `"${xeqd_path}" --version`;
         if (!fs.existsSync(xeqd_path)) {
           console.log(`[Daemon] xeq-d not found at: ${xeqd_path}`);
           this.backend.sendLog(
             "warn",
-            `xeq-d not found at: ${xeqd_path} (bin dir: ${__ryo_bin})`
+            `xeq-d not found at: ${xeqd_path} (bin dir: ${binPath})`
           );
           resolve(false);
           return;
@@ -142,9 +159,23 @@ export class Daemon {
     return new Promise((resolve, reject) => {
       this.local = true;
 
+      const { net_type } = options.app;
+      this.net_type = net_type;
+
+      // Define network-specific data directories
+      const dirs = {
+        mainnet: options.app.data_dir,
+        stagenet: path.join(options.app.data_dir, "stagenet"),
+        testnet: path.join(options.app.data_dir, "testnet"),
+        legacy: path.join(options.app.data_dir, "legacy")
+      };
+
+      // Use network-specific data directory
+      const dataDir = dirs[net_type] || options.app.data_dir;
+
       const args = [
         "--data-dir",
-        options.app.data_dir,
+        dataDir,
         "--p2p-bind-ip",
         daemon.p2p_bind_ip,
         "--p2p-bind-port",
@@ -167,20 +198,13 @@ export class Daemon {
         daemon.log_level
       ];
 
-      const dirs = {
-        mainnet: options.app.data_dir,
-        stagenet: path.join(options.app.data_dir, "stagenet"),
-        testnet: path.join(options.app.data_dir, "testnet")
-      };
-
-      const { net_type } = options.app;
-      this.net_type = net_type;
-
+      // Add network flags - legacy uses no flag (it's mainnet on the old chain)
       if (net_type === "testnet") {
         args.push("--testnet");
       } else if (net_type === "stagenet") {
         args.push("--stagenet");
       }
+      // Note: legacy and mainnet don't need network flags
 
       args.push("--log-file", path.join(dirs[net_type], "logs", "xeq-d.log"));
       if (daemon.rpc_bind_ip !== "127.0.0.1") {
@@ -213,19 +237,25 @@ export class Daemon {
           if (status === "closed") {
             // No daemon running, start a new one
             console.log("[Daemon] Port is closed, starting new daemon...");
+            const binPath = this.getBinaryPath(net_type);
             if (process.platform === "win32") {
               // Try .exe first, then without extension
-              let xeqd_path = path.join(__ryo_bin, "xeq-d.exe");
+              let xeqd_path = path.join(binPath, "xeq-d.exe");
               if (!fs.existsSync(xeqd_path)) {
-                xeqd_path = path.join(__ryo_bin, "xeq-d");
+                xeqd_path = path.join(binPath, "xeq-d");
               }
-              this.daemonProcess = child_process.spawn(xeqd_path, args);
+              this.daemonProcess = child_process.spawn(xeqd_path, args, {
+                cwd: binPath,
+                env: { ...process.env, PATH: `${binPath};${process.env.PATH}` }
+              });
             } else {
               this.daemonProcess = child_process.spawn(
-                path.join(__ryo_bin, "xeq-d"),
+                path.join(binPath, "xeq-d"),
                 args,
                 {
-                  detached: true
+                  detached: true,
+                  cwd: binPath,
+                  env: { ...process.env, PATH: `${binPath}:${process.env.PATH}` }
                 }
               );
             }
@@ -487,7 +517,16 @@ export class Daemon {
           : pivot_or_height;
       })
       .catch(() => {
-        return false;
+        // Daemon not connected - fall back to estimated height calculation
+        // This allows wallet restore to work even without daemon connection
+        let ts = timestamp;
+        if (ts > 999999999999) {
+          ts = Math.floor(ts / 1000);
+        }
+        const diff = Math.floor((ts - this.PIVOT_BLOCK_TIMESTAMP) / this.PIVOT_BLOCK_TIME);
+        const estimatedHeight = Math.max(0, this.PIVOT_BLOCK_HEIGHT + diff);
+        console.log(`[Daemon] timestampToHeight: daemon offline, using estimated height ${estimatedHeight}`);
+        return estimatedHeight;
       });
   }
 

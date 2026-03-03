@@ -63,7 +63,7 @@ export const set_update_required = (state, data) => {
 };
 
 export const push_session_log = (state, entry) => {
-  const MAX_LOGS = 500;
+  const MAX_LOGS = 5000;
   state.session_logs = [
     ...state.session_logs,
     { ...entry, timestamp: entry.timestamp || Date.now() }
