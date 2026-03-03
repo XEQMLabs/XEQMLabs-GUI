@@ -14,53 +14,61 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v3
 
-      - name: Download v22 Linux binaries from EquilibriaCC
+      - name: Download Legacy binaries (v22) from EquilibriaCC
         run: |
-          mkdir -p bin
-          echo "=== Downloading EquilibriaCC v22.0.0 daemon/tools release (x86_64 Linux) ==="
-          wget -q https://github.com/EquilibriaCC/Equilibria/releases/download/v22.0.0/build-depends-x86_64-linux.zip -O build-depends.zip
-          echo "=== Extracting archive ==="
-          unzip -o build-depends.zip
-          echo "=== ALL extracted files ==="
-          find . -path ./node_modules -prune -o -path ./.git -prune -o -type f -print | grep -v node_modules | grep -v '.git/' | head -60
-          echo "=== Searching for binaries ==="
-          find . -path ./node_modules -prune -o -path ./.git -prune -o -type f \( -name "xeq-wallet-rpc" -o -name "xeq-d" -o -name "wallet-rpc" -o -name "daemon" -o -name "wallet-cli" -o -name "xeq-wallet-cli" \) -print | head -20
-          echo "=== Copying binaries ==="
+          mkdir -p bin-legacy
+          echo "=== Downloading Legacy v22.0.0 binaries ==="
+          wget -q https://github.com/EquilibriaCC/Equilibria/releases/download/v22.0.0/build-depends-x86_64-linux.zip -O legacy.zip
+          unzip -o legacy.zip
           for NAME in xeq-wallet-rpc wallet-rpc; do
-            F=$(find . -path ./node_modules -prune -o -path ./.git -prune -o -type f -name "$NAME" -print | head -1)
+            F=$(find . -path ./node_modules -prune -o -path ./.git -prune -o -path ./bin -prune -o -type f -name "$NAME" -print | head -1)
             if [ -n "$F" ]; then
-              echo "Found: $F -> bin/xeq-wallet-rpc"
-              cp "$F" ./bin/xeq-wallet-rpc
+              cp "$F" ./bin-legacy/xeq-wallet-rpc
               break
             fi
           done
           for NAME in xeq-d daemon equilibriad; do
-            F=$(find . -path ./node_modules -prune -o -path ./.git -prune -o -type f -name "$NAME" -print | head -1)
+            F=$(find . -path ./node_modules -prune -o -path ./.git -prune -o -path ./bin -prune -o -type f -name "$NAME" -print | head -1)
             if [ -n "$F" ]; then
-              echo "Found: $F -> bin/xeq-d"
-              cp "$F" ./bin/xeq-d
+              cp "$F" ./bin-legacy/xeq-d
               break
             fi
           done
-          for NAME in xeq-wallet-cli wallet-cli; do
-            F=$(find . -path ./node_modules -prune -o -path ./.git -prune -o -type f -name "$NAME" -print | head -1)
-            if [ -n "$F" ]; then
-              echo "Found: $F -> bin/wallet-cli"
-              cp "$F" ./bin/wallet-cli
-              break
-            fi
-          done
-          echo "=== Final bin/ contents ==="
-          ls -la bin/
+          chmod +x bin-legacy/*
+          echo "=== bin-legacy/ contents ==="
+          ls -la bin-legacy/
+          rm -f legacy.zip
+
+      - name: Extract New Mainnet binaries from Docker
+        run: |
+          mkdir -p bin
+          echo "=== Pulling Docker image ==="
+          docker pull ghcr.io/equilibriahorizon/equilibria-node:latest
+          docker create --name temp-extract ghcr.io/equilibriahorizon/equilibria-node:latest
+          echo "=== Extracting binaries from /usr/local/bin/ ==="
+          docker cp temp-extract:/usr/local/bin/xeq-wallet-rpc ./bin/
+          docker cp temp-extract:/usr/local/bin/xeq-d ./bin/
+          docker rm temp-extract
           chmod +x bin/*
-          echo "=== Verify binaries ==="
-          file bin/* || true
-          echo "=== Check for xeq-wallet-rpc ==="
-          if [ ! -f bin/xeq-wallet-rpc ]; then
-            echo "FATAL: xeq-wallet-rpc not found! Build will fail."
+          echo "=== bin/ contents ==="
+          ls -la bin/
+
+      - name: Verify binaries
+        run: |
+          echo "=== Checking bin-legacy/ ==="
+          ls -la bin-legacy/
+          if [ ! -f bin-legacy/xeq-wallet-rpc ]; then
+            echo "FATAL: bin-legacy/xeq-wallet-rpc not found!"
             exit 1
           fi
-          echo "All required binaries present."
+          echo "=== Checking bin/ ==="
+          ls -la bin/
+          if [ ! -f bin/xeq-wallet-rpc ]; then
+            echo "FATAL: bin/xeq-wallet-rpc not found!"
+            exit 1
+          fi
+          echo "=== File types ==="
+          file bin-legacy/* bin/*
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -84,10 +92,10 @@ jobs:
           echo "=== Build output ==="
           ls -lah dist/electron/Packaged/ 2>/dev/null || echo "Packaged dir not found"
 
-      - name: Upload to latest release
+      - name: Upload to release v1
         uses: softprops/action-gh-release@v1
         with:
-          tag_name: v2
+          tag_name: v1
           files: |
             dist/electron/Packaged/*.AppImage
             dist/electron/Packaged/*.deb
