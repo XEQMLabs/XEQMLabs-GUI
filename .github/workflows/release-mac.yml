@@ -1,5 +1,5 @@
 # Mac-only build. Trigger by pushing a tag like mac-v1.0.0, or run manually from the Actions tab.
-name: Release (Mac only)
+name: Build macOS
 
 on:
   push:
@@ -94,6 +94,8 @@ jobs:
 
       - name: Create Release
         uses: softprops/action-gh-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           tag_name: mac-v${{ steps.get_version.outputs.version }}
           name: XEQ GUI macOS v${{ steps.get_version.outputs.version }}
@@ -106,5 +108,3 @@ jobs:
             macOS (Apple Silicon) build of XEQ GUI v${{ steps.get_version.outputs.version }}.
             - `.dmg` - Disk image installer
             - `.zip` - Zip archive
-          env:
-            GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
