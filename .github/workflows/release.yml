@@ -131,72 +131,9 @@ jobs:
             dist/electron/Packaged/*.AppImage
           retention-days: 30
 
-  build-mac:
-    name: Build macOS
-    runs-on: macos-latest
-    permissions:
-      contents: write
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v3
-
-      - name: Download Legacy macOS (v22) binaries from EquilibriaCC
-        run: |
-          mkdir -p bin-legacy
-          echo "=== Downloading Legacy v22.0.0 macOS arm64 binaries ==="
-          curl -sL -o legacy.zip "https://github.com/EquilibriaCC/Equilibria/releases/download/v22.0.0/build-depends-macOS-arm64.zip"
-          unzip -o legacy.zip
-          for NAME in xeq-wallet-rpc wallet-rpc; do
-            F=$(find . -path ./node_modules -prune -o -path ./.git -prune -o -path ./bin -prune -o -path ./prebuilt -prune -o -type f -name "$NAME" -print | head -1)
-            if [ -n "$F" ]; then
-              cp "$F" ./bin-legacy/xeq-wallet-rpc
-              break
-            fi
-          done
-          for NAME in xeq-d daemon equilibriad; do
-            F=$(find . -path ./node_modules -prune -o -path ./.git -prune -o -path ./bin -prune -o -path ./prebuilt -prune -o -type f -name "$NAME" -print | head -1)
-            if [ -n "$F" ]; then
-              cp "$F" ./bin-legacy/xeq-d
-              break
-            fi
-          done
-          chmod +x bin-legacy/*
-          ls -la bin-legacy/
-          rm -f legacy.zip
-
-      - name: Copy New Mainnet/Testnet binaries from repo
-        run: |
-          mkdir -p bin
-          cp -v prebuilt/macos-arm64/xeq-wallet-rpc prebuilt/macos-arm64/xeq-d bin/
-          [ -f prebuilt/macos-arm64/xeq-wallet-cli ] && cp -v prebuilt/macos-arm64/xeq-wallet-cli bin/
-          chmod +x bin/*
-          ls -la bin/
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: "20.x"
-          cache: "npm"
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Build macOS
-        run: npm run build:mac
-
-      - name: Upload macOS artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: mac-build
-          path: |
-            dist/electron/Packaged/*.dmg
-            dist/electron/Packaged/*.zip
-          retention-days: 30
-
   create-release:
     name: Create Release
-    needs: [build-windows, build-linux, build-mac]
+    needs: [build-windows, build-linux]
     runs-on: ubuntu-latest
     if: always()
     permissions:
@@ -220,13 +157,6 @@ jobs:
           path: release/linux
         continue-on-error: true
 
-      - name: Download macOS artifacts
-        uses: actions/download-artifact@v4
-        with:
-          name: mac-build
-          path: release/mac
-        continue-on-error: true
-
       - name: Extract version from tag
         id: get_version
         run: |
@@ -244,8 +174,6 @@ jobs:
           files: |
             release/**/*.exe
             release/**/*.AppImage
-            release/**/*.dmg
-            release/**/*.zip
           fail_on_unmatched_files: false
           generate_release_notes: false
           draft: false
@@ -262,10 +190,6 @@ jobs:
 
             **Linux:**
             - `XEQ-GUI-*-linux.AppImage` - Portable AppImage
-
-            **macOS (Apple Silicon):**
-            - `XEQ-GUI-*-mac.dmg` - Disk image
-            - `XEQ-GUI-*-mac.zip` - Zip archive
 
             ### Networks
             - **Legacy Mainnet** - Live, original XEQ network

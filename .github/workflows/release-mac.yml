@@ -1,0 +1,110 @@
+# Mac-only build. Trigger by pushing a tag like mac-v1.0.0, or run manually from the Actions tab.
+name: Release (Mac only)
+
+on:
+  push:
+    tags:
+      - "mac-v*"
+  workflow_dispatch:
+
+jobs:
+  build-mac:
+    name: Build macOS
+    runs-on: macos-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Download Legacy macOS (v22) binaries from EquilibriaCC
+        run: |
+          mkdir -p bin-legacy
+          echo "=== Downloading Legacy v22.0.0 macOS arm64 binaries ==="
+          curl -sL -o legacy.zip "https://github.com/EquilibriaCC/Equilibria/releases/download/v22.0.0/build-depends-macOS-arm64.zip"
+          unzip -o legacy.zip
+          for NAME in xeq-wallet-rpc wallet-rpc; do
+            F=$(find . -path ./node_modules -prune -o -path ./.git -prune -o -path ./bin -prune -o -path ./prebuilt -prune -o -type f -name "$NAME" -print | head -1)
+            if [ -n "$F" ]; then
+              cp "$F" ./bin-legacy/xeq-wallet-rpc
+              break
+            fi
+          done
+          for NAME in xeq-d daemon equilibriad; do
+            F=$(find . -path ./node_modules -prune -o -path ./.git -prune -o -path ./bin -prune -o -path ./prebuilt -prune -o -type f -name "$NAME" -print | head -1)
+            if [ -n "$F" ]; then
+              cp "$F" ./bin-legacy/xeq-d
+              break
+            fi
+          done
+          chmod +x bin-legacy/*
+          ls -la bin-legacy/
+          rm -f legacy.zip
+
+      - name: Copy New Mainnet/Testnet binaries from repo
+        run: |
+          mkdir -p bin
+          cp -v prebuilt/macos-arm64/xeq-wallet-rpc prebuilt/macos-arm64/xeq-d bin/
+          [ -f prebuilt/macos-arm64/xeq-wallet-cli ] && cp -v prebuilt/macos-arm64/xeq-wallet-cli bin/
+          chmod +x bin/*
+          ls -la bin/
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20.x"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build macOS
+        run: npm run build:mac
+
+      - name: Upload macOS artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: mac-build
+          path: |
+            dist/electron/Packaged/*.dmg
+            dist/electron/Packaged/*.zip
+          retention-days: 30
+
+  create-mac-release:
+    name: Create Mac Release
+    needs: build-mac
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/mac-v')
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download macOS artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: mac-build
+          path: release/mac
+
+      - name: Extract version from tag
+        id: get_version
+        run: |
+          VERSION=${GITHUB_REF#refs/tags/mac-v}
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: mac-v${{ steps.get_version.outputs.version }}
+          name: XEQ GUI macOS v${{ steps.get_version.outputs.version }}
+          files: release/mac/*
+          fail_on_unmatched_files: true
+          generate_release_notes: false
+          draft: false
+          prerelease: false
+          body: |
+            macOS (Apple Silicon) build of XEQ GUI v${{ steps.get_version.outputs.version }}.
+            - `.dmg` - Disk image installer
+            - `.zip` - Zip archive
+          env:
+            GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
