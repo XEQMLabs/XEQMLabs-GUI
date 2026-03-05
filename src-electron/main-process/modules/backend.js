@@ -667,8 +667,8 @@ export class Backend {
         `[Backend] Wallet directory set to: ${this.config_data.app.wallet_data_dir}`
       );
 
-      // Ensure data and wallet directories exist (create if missing)
-      const dirs_to_check = [data_dir, wallet_data_dir];
+      // Ensure data and wallet directories exist (create if missing) — use updated path (fixes Mac first-run /wallets error)
+      const dirs_to_check = [data_dir, this.config_data.app.wallet_data_dir];
       for (const dir of dirs_to_check) {
         if (!fs.existsSync(dir)) {
           try {
