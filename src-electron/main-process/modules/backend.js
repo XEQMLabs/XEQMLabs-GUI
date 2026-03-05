@@ -649,8 +649,10 @@ export class Backend {
 
       // Make the wallet dir
       const { wallet_data_dir, data_dir } = this.config_data.app;
-      // Ensure wallet_data_dir uses the wallets folder in project root
-      const defaultWalletDir = path.join(process.cwd(), "wallets");
+      // On macOS, process.cwd() is often "/" when launched from .app; use app dir to avoid creating /wallets. Windows/Linux unchanged.
+      const defaultWalletDir = process.platform === "darwin"
+        ? path.join(this.appDir, "wallets")
+        : path.join(process.cwd(), "wallets");
       if (
         !this.config_data.app.wallet_data_dir ||
         this.config_data.app.wallet_data_dir !== defaultWalletDir
