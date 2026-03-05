@@ -297,6 +297,32 @@
           You can delete this folder to resync, or copy in a pre-synced database to speed up initial sync.
         </p>
       </div>
+
+      <!-- Wallet Backup (read-only, informational) -->
+      <div class="blockchain-db-info q-mt-md q-pa-md">
+        <div class="row items-center justify-between q-mb-sm">
+          <div class="db-info-label">
+            <q-icon name="backup" size="sm" class="q-mr-sm" />
+            <strong>Wallet Backup</strong>
+          </div>
+          <q-btn
+            v-if="walletsBackupPath"
+            flat
+            dense
+            color="primary"
+            icon="folder_open"
+            label="Open Folder"
+            @click="openWalletBackupFolder"
+          />
+        </div>
+        <div class="db-path q-pa-sm">
+          {{ walletsBackupPath || '—' }}
+        </div>
+        <p class="text-caption q-mb-none q-mt-sm">
+          Wallet files are automatically copied here (per network). This folder is not removed when you reinstall the app.
+          To restore after reinstall, copy files from here into your wallet storage path above.
+        </p>
+      </div>
     </div>
 
     <q-expansion-item
@@ -563,6 +589,9 @@ export default {
         default:
           return baseDir;
       }
+    },
+    walletsBackupPath() {
+      return (this.config.app && this.config.app.wallets_backup_path) || "";
     }
   }),
   mounted() {
@@ -674,6 +703,11 @@ export default {
     openBlockchainFolder() {
       if (this.blockchainDataDir) {
         this.$gateway.send("core", "open_folder", { path: this.blockchainDataDir });
+      }
+    },
+    openWalletBackupFolder() {
+      if (this.walletsBackupPath) {
+        this.$gateway.send("core", "open_folder", { path: this.walletsBackupPath });
       }
     }
   }

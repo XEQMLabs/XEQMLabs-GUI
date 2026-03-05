@@ -49,6 +49,14 @@ export class Backend {
       appDir = process.cwd();
     }
 
+    this.appDir = appDir;
+    // Safe backup location (survives reinstall): app data dir, same on Windows/Linux/macOS
+    this.walletsBackupDir = path.join(app.getPath("appData"), "XEQ-GUI", "wallets-backup");
+    try {
+      fs.ensureDirSync(this.walletsBackupDir);
+    } catch (e) {
+      console.warn("[Backend] Could not create wallets backup dir:", e.message);
+    }
     const configDir = path.join(appDir, "data");
 
     this.wallet_dir = path.join(appDir, "wallets");
@@ -258,9 +266,11 @@ export class Backend {
 
         console.log("[Backend] Config_data.app AFTER merge:", JSON.stringify(this.config_data.app, null, 2));
 
-        // Use sync write to ensure config is saved before app restart
+        // Use sync write to ensure config is saved before app restart (do not persist wallets_backup_path)
         try {
-          const configJson = JSON.stringify(this.config_data, null, 4);
+          const toWrite = objectAssignDeep.noMutate({}, this.config_data);
+          if (toWrite.app && "wallets_backup_path" in toWrite.app) delete toWrite.app.wallets_backup_path;
+          const configJson = JSON.stringify(toWrite, null, 4);
           console.log("[Backend] Writing config to disk, net_type:", this.config_data.app?.net_type);
           fs.writeFileSync(
             this.config_file,
@@ -274,9 +284,12 @@ export class Backend {
           const verifyParsed = JSON.parse(verifyData);
           console.log("[Backend] Verified config on disk, net_type:", verifyParsed.app?.net_type);
 
+          const payload = objectAssignDeep.noMutate({}, params);
+          if (!payload.app) payload.app = {};
+          payload.app.wallets_backup_path = this.walletsBackupDir;
           this.send("set_app_data", {
-            config: params,
-            pending_config: params
+            config: payload,
+            pending_config: payload
           });
         } catch (err) {
           console.error("[Backend] Failed to save config:", err);
@@ -319,10 +332,13 @@ export class Backend {
           ...this.config_data,
           ...validated
         };
+        this.config_data.app.wallets_backup_path = this.walletsBackupDir;
 
+        const toWrite = objectAssignDeep.noMutate({}, this.config_data);
+        if (toWrite.app && "wallets_backup_path" in toWrite.app) delete toWrite.app.wallets_backup_path;
         fs.writeFile(
           this.config_file,
-          JSON.stringify(this.config_data, null, 4),
+          JSON.stringify(toWrite, null, 4),
           "utf8",
           () => {
             if (data.method == "save_config_init") {
@@ -438,6 +454,61 @@ export class Backend {
   // Example: "https://api.github.com/repos/EquilibriaCC/xeq-electron-wallet/releases/latest"
   async checkVersion() {
     this.send("set_update_required", false);
+  }
+
+  /**
+   * Copy wallet files from app wallet_data_dir to the safe backup folder (per-network).
+   * @param {boolean} avoidOverwrite - If true (e.g. after create/restore/import), when a wallet with the same name already exists in backup, copies as "name (1)", "name (2)", etc. If false (e.g. on startup), overwrites so backup stays in sync.
+   */
+  syncWalletsToBackup(avoidOverwrite = false) {
+    if (!this.walletsBackupDir || !this.config_data.app || !this.config_data.app.wallet_data_dir) return;
+    const walletDataDir = this.config_data.app.wallet_data_dir;
+    const networks = ["mainnet", "legacy", "testnet", "stagenet"];
+    try {
+      for (const net of networks) {
+        const srcNet = path.join(walletDataDir, net);
+        if (!fs.existsSync(srcNet)) continue;
+        const dstNet = path.join(this.walletsBackupDir, net);
+        fs.ensureDirSync(dstNet);
+        const entries = fs.readdirSync(srcNet).filter(e => {
+          const p = path.join(srcNet, e);
+          return fs.statSync(p).isFile();
+        });
+        const byBase = {};
+        for (const entry of entries) {
+          let base;
+          if (entry.endsWith(".keys")) base = entry.slice(0, -5);
+          else if (entry.endsWith(".address.txt")) base = entry.slice(0, -12);
+          else if (entry.endsWith(".hwdev.txt")) base = entry.slice(0, -10);
+          else if (entry.endsWith(".meta.json")) base = entry.slice(0, -10);
+          else base = entry;
+          if (base.endsWith(".")) base = base.slice(0, -1);
+          if (!byBase[base]) byBase[base] = [];
+          byBase[base].push(entry);
+        }
+        for (const base of Object.keys(byBase)) {
+          const files = byBase[base];
+          let destBase = base;
+          const existsInBackup = (name) => fs.existsSync(path.join(dstNet, name));
+          if (avoidOverwrite && (existsInBackup(base) || existsInBackup(base + ".keys"))) {
+            let n = 1;
+            while (existsInBackup(destBase) || existsInBackup(destBase + ".keys")) {
+              destBase = `${base} (${n})`;
+              n++;
+            }
+          }
+          for (const file of files) {
+            const newName = file === base ? destBase : destBase + file.slice(base.length);
+            const srcPath = path.join(srcNet, file);
+            const dstPath = path.join(dstNet, newName);
+            fs.copySync(srcPath, dstPath, { overwrite: true });
+          }
+        }
+      }
+    } catch (e) {
+      console.warn("[Backend] syncWalletsToBackup error:", e.message);
+      this.sendLog("warn", `Wallet backup sync failed: ${e.message}`);
+    }
   }
 
   initLogger(logPath) {
@@ -557,14 +628,17 @@ export class Backend {
         }
       }
 
-      // save config file back to file, so updated options are stored on disk
+      // save config file back to file (do not persist wallets_backup_path)
+      const toWriteStartup = objectAssignDeep.noMutate({}, this.config_data);
+      if (toWriteStartup.app && "wallets_backup_path" in toWriteStartup.app) delete toWriteStartup.app.wallets_backup_path;
       fs.writeFile(
         this.config_file,
-        JSON.stringify(this.config_data, null, 4),
+        JSON.stringify(toWriteStartup, null, 4),
         "utf8",
         () => {}
       );
 
+      this.config_data.app.wallets_backup_path = this.walletsBackupDir;
       console.log("[Backend] Sending to frontend - net_type:", this.config_data.app?.net_type);
       console.log("[Backend] ========== STARTUP COMPLETE ==========");
 
@@ -639,6 +713,35 @@ export class Backend {
         fs.mkdirpSync(log_dir);
       }
 
+      // Environment summary for Troubleshooting tab
+      const binPath = net_type === "legacy"
+        ? (typeof global.__ryo_bin_legacy !== "undefined" ? global.__ryo_bin_legacy : path.join(this.appDir, "bin-legacy"))
+        : (typeof global.__ryo_bin !== "undefined" ? global.__ryo_bin : path.join(this.appDir, "bin"));
+      const daemonExe = path.join(binPath, process.platform === "win32" ? "xeq-d.exe" : "xeq-d");
+      const walletRpcExe = path.join(binPath, process.platform === "win32" ? "xeq-wallet-rpc.exe" : "xeq-wallet-rpc");
+      const wallet_net_dir = path.join(wallet_data_dir, net_type);
+      const dmn = this.config_data.daemons[net_type];
+      const rpcPort = dmn.type === "remote" ? dmn.remote_port : dmn.rpc_bind_port;
+      const p2pPort = dmn.p2p_bind_port;
+      const walletRpcPort = this.config_data.wallet.rpc_bind_port || 22026;
+
+      this.sendLog("info", "--- Environment ---");
+      this.sendLog("info", `Platform: ${os.platform()}, arch: ${os.arch()}`);
+      this.sendLog("info", `Active network: ${net_type}`);
+      this.sendLog("info", `App dir: ${this.appDir}`);
+      this.sendLog("info", `Data dir: ${this.config_dir}`);
+      this.sendLog("info", `Daemon data dir (this net): ${net_dir}`);
+      this.sendLog("info", `Wallet dir: ${wallet_data_dir}`);
+      this.sendLog("info", `Wallet dir (this net): ${wallet_net_dir}`);
+      this.sendLog("info", `Daemon binary dir: ${binPath}`);
+      this.sendLog("info", `Daemon binary: ${daemonExe}`);
+      this.sendLog("info", `Wallet-rpc binary dir: ${binPath}`);
+      this.sendLog("info", `Wallet-rpc binary: ${walletRpcExe}`);
+      this.sendLog("info", `Daemon: type=${dmn.type}, RPC port=${rpcPort}, P2P port=${p2pPort}` + (dmn.type === "remote" ? `, Remote: ${dmn.remote_host}:${dmn.remote_port}` : ""));
+      this.sendLog("info", `Wallet RPC port: ${walletRpcPort}`);
+
+      this.syncWalletsToBackup();
+
       this.initLogger(log_dir);
 
       this.daemon = new Daemon(this);
@@ -697,7 +800,8 @@ export class Backend {
         })
         .catch(walletError => {
           const wMsg = walletError && walletError.message ? walletError.message : String(walletError || "unknown");
-          this.sendLog("error", `Wallet RPC failed: ${wMsg}`);
+          const rpcPort = this.config_data.wallet.rpc_bind_port || 22026;
+          this.sendLog("error", `Wallet RPC failed (${net_type}, port ${rpcPort}): ${wMsg}`);
           this.send("show_notification", {
             type: "negative",
             message: `Could not start wallet: ${wMsg}`,
@@ -718,11 +822,11 @@ export class Backend {
       daemon_connected: false
     });
 
-    this.daemon.checkVersion().then(version => {
+    this.daemon.checkVersion(this.config_data.app.net_type).then(version => {
       if (version) {
         this.sendLog("info", `Daemon version: ${version}`);
       } else {
-        this.sendLog("warn", "Daemon binary not found");
+        this.sendLog("warn", `Daemon binary not found (network: ${net_type})`);
         this.send("show_notification", {
           type: "negative",
           message: "Daemon binary not found. Please check your installation.",

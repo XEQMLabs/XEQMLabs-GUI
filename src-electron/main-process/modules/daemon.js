@@ -47,9 +47,10 @@ export class Daemon {
         if (!fs.existsSync(xeqd_path)) {
           console.log(`[Daemon] xeq-d not found at: ${xeqd_path}`);
           console.log(`[Daemon] bin path is: ${binPath}`);
+          const netLabel = net_type ? ` (network: ${net_type})` : "";
           this.backend.sendLog(
             "warn",
-            `xeq-d not found at: ${xeqd_path} (bin dir: ${binPath})`
+            `xeq-d not found at: ${xeqd_path} (bin dir: ${binPath})${netLabel}`
           );
           resolve(false);
           return;
@@ -65,7 +66,10 @@ export class Daemon {
         }, (error, stdout) => {
           if (error) {
             console.log(`[Daemon] Error running xeq-d --version:`, error);
+            const netLabel = net_type ? `[${net_type}] ` : "";
+            this.backend.sendLog("warn", `${netLabel}Daemon binary failed to run: ${error.message || String(error)}`);
             resolve(false);
+            return;
           }
           resolve(stdout);
         });
@@ -74,9 +78,10 @@ export class Daemon {
         let xeqd_version_cmd = `"${xeqd_path}" --version`;
         if (!fs.existsSync(xeqd_path)) {
           console.log(`[Daemon] xeq-d not found at: ${xeqd_path}`);
+          const netLabel = net_type ? ` (network: ${net_type})` : "";
           this.backend.sendLog(
             "warn",
-            `xeq-d not found at: ${xeqd_path} (bin dir: ${binPath})`
+            `xeq-d not found at: ${xeqd_path} (bin dir: ${binPath})${netLabel}`
           );
           resolve(false);
           return;
@@ -86,7 +91,10 @@ export class Daemon {
           { detached: true },
           (error, stdout) => {
             if (error) {
+              const netLabel = net_type ? `[${net_type}] ` : "";
+              this.backend.sendLog("warn", `${netLabel}Daemon binary failed to run: ${error.message || String(error)}`);
               resolve(false);
+              return;
             }
             resolve(stdout);
           }
@@ -130,7 +138,7 @@ export class Daemon {
 
       this.backend.sendLog(
         "info",
-        `Connecting to remote node ${daemon.remote_host}:${daemon.remote_port}...`
+        `[${net_type}] Connecting to remote node ${daemon.remote_host}:${daemon.remote_port}...`
       );
 
       return new Promise((resolve, reject) => {
@@ -238,6 +246,9 @@ export class Daemon {
             // No daemon running, start a new one
             console.log("[Daemon] Port is closed, starting new daemon...");
             const binPath = this.getBinaryPath(net_type);
+            this.backend.sendLog("info", `[${net_type}] Starting local daemon: data-dir=${dataDir}, RPC 127.0.0.1:${daemon.rpc_bind_port}, P2P :${daemon.p2p_bind_port}`);
+            const daemonExePath = path.join(binPath, process.platform === "win32" ? "xeq-d.exe" : "xeq-d");
+            this.backend.sendLog("info", `[${net_type}] Daemon binary: ${daemonExePath}`);
             if (process.platform === "win32") {
               // Try .exe first, then without extension
               let xeqd_path = path.join(binPath, "xeq-d.exe");
@@ -299,10 +310,11 @@ export class Daemon {
             });
             this.daemonProcess.on("close", code => {
               process.stderr.write(`Daemon: exited with code ${code} \n`);
-              this.backend.sendLog(
-                "warn",
-                `[daemon] Process exited with code ${code}`
-              );
+              let exitMsg = `[daemon] Process exited with code ${code}`;
+              if (code !== null && (code > 255 || code < 0)) {
+                exitMsg += ` (Windows error code; hex 0x${(code >>> 0).toString(16).toUpperCase()})`;
+              }
+              this.backend.sendLog("warn", exitMsg);
               this.daemonProcess = null;
               this.agent.destroy();
               if (code === null) {

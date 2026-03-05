@@ -6,8 +6,9 @@
       <div class="q-mt-md">Restarting...</div>
     </div>
 
-    <!-- Current Network Mode Banner -->
+    <!-- Current Network Mode Banner (deferred so config is settled and list doesn't glitch) -->
     <q-banner
+      v-if="showNetworkBanner"
       :class="networkBannerClass"
       class="q-mb-xs network-mode-banner compact"
     >
@@ -117,6 +118,7 @@ export default {
     return {
       selectedNetwork: null,
       isRestarting: false,
+      showNetworkBanner: false,
       networkOptions: [
         { label: "Legacy Mainnet", value: "legacy", icon: "history", description: "Original XEQ network" },
         { label: "Mainnet (Offline)", value: "mainnet", icon: "public", description: "New mainnet - not yet live" },
@@ -215,15 +217,22 @@ export default {
     console.log("[wallet-select] created() - currentNetType:", this.currentNetType);
     console.log("[wallet-select] created() - config.app:", JSON.stringify(this.$store.state.gateway.app.config.app, null, 2));
     this.$gateway.send("wallet", "list_wallets");
-    // Initialize selected network from current config
-    this.selectedNetwork = this.currentNetType;
+  },
+  mounted() {
+    // Defer showing the network banner so backend config has been applied and
+    // the dropdown doesn't glitch/reorder when net_type settles
+    this._networkBannerTimer = setTimeout(() => {
+      this.showNetworkBanner = true;
+      this.selectedNetwork = this.currentNetType;
+    }, 120);
+  },
+  beforeUnmount() {
+    if (this._networkBannerTimer) clearTimeout(this._networkBannerTimer);
   },
   watch: {
     currentNetType: {
-      immediate: true,
       handler(val) {
-        console.log("[wallet-select] currentNetType watcher fired, new value:", val);
-        this.selectedNetwork = val;
+        if (this.showNetworkBanner) this.selectedNetwork = val;
       }
     },
     statusCode(code, oldCode) {

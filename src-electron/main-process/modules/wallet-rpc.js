@@ -278,6 +278,9 @@ export class WalletRPC {
           "info",
           `Starting wallet RPC (daemon: ${daemon_address})`
         );
+        this.backend.sendLog("info", `[${net_type}] Wallet RPC: binary_dir=${binPath}, binary=${rpcPath}`);
+        this.backend.sendLog("info", `[${net_type}] Wallet RPC: wallet_dir=${this.wallet_dir}, log_file=${log_file}`);
+        this.backend.sendLog("info", `[${net_type}] Wallet RPC: daemon_address=${daemon_address}, rpc_bind=127.0.0.1:${options.wallet.rpc_bind_port}`);
 
         portscanner
           .checkPortStatus(this.port, this.hostname)
@@ -383,16 +386,26 @@ export class WalletRPC {
               });
               this.walletRPCProcess.on("close", code => {
                 process.stderr.write(`Wallet: exited with code ${code} \n`);
-                this.backend.sendLog(
-                  "warn",
-                  `[wallet-rpc] Process exited with code ${code}`
-                );
+                let exitMsg = `[wallet-rpc] Process exited with code ${code}`;
+                if (code !== null && (code > 255 || code < 0)) {
+                  exitMsg += ` (Windows error code; hex 0x${(code >>> 0).toString(16).toUpperCase()})`;
+                }
+                this.backend.sendLog("warn", exitMsg);
                 this.walletRPCProcess = null;
                 this.agent.destroy();
                 if (code === null) {
                   reject(new Error("Failed to start wallet RPC"));
                 }
               });
+              if (this.walletRPCProcess.stderr) {
+                this.walletRPCProcess.stderr.on("data", data => {
+                  const lines = String(data).split("\n");
+                  for (const line of lines) {
+                    const trimmed = line.trim();
+                    if (trimmed) this.backend.sendLog("error", `[wallet-rpc stderr] ${trimmed}`);
+                  }
+                });
+              }
 
               let intrvl = setInterval(() => {
                 this.sendRPC("get_languages").then(data => {
@@ -412,6 +425,7 @@ export class WalletRPC {
                       // Ignore
                     } else {
                       clearInterval(intrvl);
+                      this.backend.sendLog("error", `[${net_type}] Could not connect to wallet RPC after startup (port ${this.port})`);
                       if (this.walletRPCProcess) this.walletRPCProcess.kill();
                       this.walletRPCProcess = null;
                       reject(new Error("Could not connect to wallet RPC"));
@@ -420,6 +434,7 @@ export class WalletRPC {
                 });
               }, 1000);
             } else {
+              this.backend.sendLog("warn", `[${net_type}] Wallet RPC port ${this.port} is in use; cannot start`);
               reject(new Error(`Wallet RPC port ${this.port} is in use`));
             }
           });
@@ -772,6 +787,7 @@ export class WalletRPC {
       this.wallet_state.name = filename;
       this.wallet_state.open = true;
 
+      this.backend.syncWalletsToBackup(true);
       this.finalizeNewWallet(filename);
     });
   }
@@ -848,6 +864,7 @@ export class WalletRPC {
       this.wallet_state.name = filename;
       this.wallet_state.open = true;
 
+      this.backend.syncWalletsToBackup(true);
       this.finalizeNewWallet(filename);
     });
   }
@@ -916,6 +933,7 @@ export class WalletRPC {
       this.wallet_state.name = filename;
       this.wallet_state.open = true;
 
+      this.backend.syncWalletsToBackup(true);
       this.finalizeNewWallet(filename);
     });
   }
@@ -1004,6 +1022,12 @@ export class WalletRPC {
           this.wallet_state.password = password;
           this.wallet_state.name = wallet_name;
           this.wallet_state.open = true;
+          this.backend.syncWalletsToBackup(true);
+          // Refresh wallet list with address so imported wallet shows address in list (like restored)
+          this.sendRPC("get_address", { account_index: 0 }, 5000).then(addrRes => {
+            const address = (addrRes && addrRes.result && addrRes.result.address) ? addrRes.result.address : "";
+            this.listWallets(false, { name: wallet_name, address });
+          }).catch(() => {});
           this.finalizeNewWallet(wallet_name);
         })
         .catch(() => {
@@ -1080,13 +1104,14 @@ export class WalletRPC {
           this.wallet_dir,
           filename + ".address.txt"
         );
-        if (!fs.existsSync(address_txt_path)) {
-          fs.writeFile(address_txt_path, wallet.info.address, "utf8", () => {
-            this.listWallets();
-          });
-        } else {
-          this.listWallets();
+        if (!fs.existsSync(address_txt_path) && wallet.info.address) {
+          try {
+            fs.writeFileSync(address_txt_path, wallet.info.address, "utf8");
+          } catch (e) {
+            console.warn("[WalletRPC] Could not write .address.txt:", e.message);
+          }
         }
+        this.listWallets(false, { name: filename, address: wallet.info.address });
       });
 
       // Send wallet data with secrets FIRST
@@ -2935,13 +2960,23 @@ export class WalletRPC {
       });
       this.walletRPCProcess.on("close", code => {
         process.stderr.write(`Wallet: exited with code ${code} \n`);
-        this.backend.sendLog(
-          "warn",
-          `[wallet-rpc] Process exited with code ${code}`
-        );
+        let exitMsg = `[wallet-rpc] Process exited with code ${code}`;
+        if (code !== null && (code > 255 || code < 0)) {
+          exitMsg += ` (Windows error code; hex 0x${(code >>> 0).toString(16).toUpperCase()})`;
+        }
+        this.backend.sendLog("warn", exitMsg);
         this.walletRPCProcess = null;
         if (this.agent) this.agent.destroy();
       });
+      if (this.walletRPCProcess.stderr) {
+        this.walletRPCProcess.stderr.on("data", data => {
+          const lines = String(data).split("\n");
+          for (const line of lines) {
+            const trimmed = line.trim();
+            if (trimmed) this.backend.sendLog("error", `[wallet-rpc stderr] ${trimmed}`);
+          }
+        });
+      }
 
       // Wait for wallet-rpc to be ready (responds to get_languages)
       await new Promise((resolve, reject) => {
@@ -3666,7 +3701,7 @@ export class WalletRPC {
     return { wallets, directories };
   }
 
-  listWallets(legacy = false) {
+  listWallets(legacy = false, addressPatch = null) {
     let wallets = {
       list: [],
       directories: []
@@ -3769,6 +3804,14 @@ export class WalletRPC {
         } catch (e) {
           // Something went wrong
         }
+      }
+    }
+
+    // Ensure newly created/restored wallet has address in list (in case .address.txt not read yet)
+    if (addressPatch && addressPatch.name && addressPatch.address) {
+      const entry = wallets.list.find(w => w.name === addressPatch.name);
+      if (entry && !entry.address) {
+        entry.address = addressPatch.address;
       }
     }
 

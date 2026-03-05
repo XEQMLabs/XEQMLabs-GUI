@@ -69,7 +69,7 @@
       <q-btn
         class="submit-button"
         color="primary"
-        :label="$tc('buttons.importWallet', 1)"
+        :label="$t('buttons.importWallet').split(' | ')[0]"
         @click="import_wallet"
       />
     </div>

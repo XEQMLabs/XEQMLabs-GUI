@@ -33,7 +33,7 @@
     <q-item-section>
       <q-item-label class="wallet-name" caption>{{ wallet.name }}</q-item-label>
       <q-item-label class="monospace ellipsis" caption>{{
-        wallet.address
+        wallet.address || '—'
       }}</q-item-label>
     </q-item-section>
     <ContextMenu

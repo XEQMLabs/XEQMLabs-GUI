@@ -38,7 +38,7 @@
       <q-btn
         color="primary"
         class="submit-button"
-        :label="$tc('buttons.importWallet', 2)"
+        :label="($t('buttons.importWallet').split(' | ')[1] || $t('buttons.importWallet')).trim()"
         :disable="selectedWallets.length === 0"
         @click="import_wallets"
       />
