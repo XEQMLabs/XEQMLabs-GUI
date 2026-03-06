@@ -27,7 +27,7 @@ jobs:
       - name: Copy New Mainnet binaries from repo
         shell: pwsh
         run: |
-          mkdir -p bin
+          New-Item -ItemType Directory -Force -Path bin | Out-Null
           if (Test-Path "prebuilt/windows-x64") {
             Get-ChildItem -Path "prebuilt/windows-x64" -File | ForEach-Object {
               Copy-Item $_.FullName -Destination "bin/"
@@ -43,7 +43,7 @@ jobs:
       - name: Download Legacy Windows binaries (v22)
         shell: pwsh
         run: |
-          mkdir -p bin-legacy
+          New-Item -ItemType Directory -Force -Path bin-legacy | Out-Null
           Write-Host "=== Downloading Legacy v22.0.0 Windows binaries ==="
           Invoke-WebRequest -Uri "https://github.com/EquilibriaCC/Equilibria/releases/download/v22.0.0/build-depends-windows-x86_64.zip" -OutFile legacy.zip
           Expand-Archive -Path legacy.zip -DestinationPath legacy-extract -Force
