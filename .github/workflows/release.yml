@@ -47,12 +47,13 @@ jobs:
           Write-Host "=== Downloading Legacy v22.0.0 Windows binaries ==="
           Invoke-WebRequest -Uri "https://github.com/EquilibriaCC/Equilibria/releases/download/v22.0.0/build-depends-windows-x64.zip" -OutFile legacy.zip
           Expand-Archive -Path legacy.zip -DestinationPath legacy-extract -Force
-          $walletRpc = Get-ChildItem -Path legacy-extract -Recurse -Filter "xeq-wallet-rpc.exe" | Select-Object -First 1
-          $daemon    = Get-ChildItem -Path legacy-extract -Recurse -Filter "xeq-d.exe"           | Select-Object -First 1
-          $walletCli = Get-ChildItem -Path legacy-extract -Recurse -Filter "xeq-wallet-cli.exe"  | Select-Object -First 1
-          if ($walletRpc) { Copy-Item $walletRpc.FullName -Destination "bin-legacy/xeq-wallet-rpc.exe"; Write-Host "Got xeq-wallet-rpc.exe" }
-          if ($daemon)    { Copy-Item $daemon.FullName    -Destination "bin-legacy/xeq-d.exe";           Write-Host "Got xeq-d.exe" }
-          if ($walletCli) { Copy-Item $walletCli.FullName -Destination "bin-legacy/xeq-wallet-cli.exe"; Write-Host "Got xeq-wallet-cli.exe" }
+          # zip contains bare names: wallet-rpc.exe, daemon.exe, wallet-cli.exe
+          $walletRpc = Get-ChildItem -Path legacy-extract -Recurse | Where-Object { $_.Name -in @("xeq-wallet-rpc.exe","wallet-rpc.exe") } | Select-Object -First 1
+          $daemon    = Get-ChildItem -Path legacy-extract -Recurse | Where-Object { $_.Name -in @("xeq-d.exe","daemon.exe") }             | Select-Object -First 1
+          $walletCli = Get-ChildItem -Path legacy-extract -Recurse | Where-Object { $_.Name -in @("xeq-wallet-cli.exe","wallet-cli.exe") } | Select-Object -First 1
+          if ($walletRpc) { Copy-Item $walletRpc.FullName -Destination "bin-legacy/xeq-wallet-rpc.exe"; Write-Host "Got xeq-wallet-rpc.exe" } else { Write-Host "WARN: wallet-rpc not found" }
+          if ($daemon)    { Copy-Item $daemon.FullName    -Destination "bin-legacy/xeq-d.exe";           Write-Host "Got xeq-d.exe" }           else { Write-Host "WARN: daemon not found" }
+          if ($walletCli) { Copy-Item $walletCli.FullName -Destination "bin-legacy/xeq-wallet-cli.exe"; Write-Host "Got xeq-wallet-cli.exe" }   else { Write-Host "WARN: wallet-cli not found" }
           Write-Host "=== bin-legacy/ contents ==="
           Get-ChildItem bin-legacy
           Remove-Item legacy.zip            -ErrorAction SilentlyContinue
