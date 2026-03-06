@@ -13,7 +13,8 @@ export default {
     legacyRemotes: [],
     daemon_connected: false,
     daemon_connecting: false,
-    open_settings_requested: false
+    open_settings_requested: false,
+    xeq_price: null
   },
   wallets: {
     list: [],

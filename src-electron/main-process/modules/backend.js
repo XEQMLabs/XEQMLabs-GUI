@@ -93,8 +93,8 @@ export class Backend {
       stagenet: {
         ...daemon,
         type: "local",
-        p2p_bind_port: 38153,
-        rpc_bind_port: 38154
+        p2p_bind_port: 11022,
+        rpc_bind_port: 11023
       },
       testnet: {
         ...daemon,
@@ -457,6 +457,42 @@ export class Backend {
   }
 
   /**
+   * Fetch XEQ/USD spot price from CoinGecko and push it to the frontend.
+   * Security: main-process only, HTTPS, hardcoded URL, strict validation,
+   * 10s timeout. No wallet data is sent in the request.
+   */
+  fetchXEQPrice() {
+    const PRICE_URL =
+      "https://api.coingecko.com/api/v3/simple/price?ids=equilibria&vs_currencies=usd";
+    fetch(PRICE_URL, {
+      method: "GET",
+      headers: { Accept: "application/json" },
+      signal: AbortSignal.timeout(10000)
+    })
+      .then(res => {
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        return res.json();
+      })
+      .then(data => {
+        // Strict validation — never trust external data blindly
+        const price = data?.equilibria?.usd;
+        if (
+          typeof price !== "number" ||
+          !Number.isFinite(price) ||
+          price < 0 ||
+          price > 1_000_000
+        ) {
+          throw new Error("Unexpected price response");
+        }
+        this.send("set_app_data", { xeq_price: price });
+      })
+      .catch(() => {
+        // Offline, timed out, or bad data — clear price silently
+        this.send("set_app_data", { xeq_price: null });
+      });
+  }
+
+  /**
    * Copy wallet files from app wallet_data_dir to the safe backup folder (per-network).
    * @param {boolean} avoidOverwrite - If true (e.g. after create/restore/import), when a wallet with the same name already exists in backup, copies as "name (1)", "name (2)", etc. If false (e.g. on startup), overwrites so backup stays in sync.
    */
@@ -649,10 +685,10 @@ export class Backend {
 
       // Make the wallet dir
       const { wallet_data_dir, data_dir } = this.config_data.app;
-      // On macOS, process.cwd() is often "/" when launched from .app; use app dir to avoid creating /wallets. Windows/Linux unchanged.
-      const defaultWalletDir = process.platform === "darwin"
-        ? path.join(this.appDir, "wallets")
-        : path.join(process.cwd(), "wallets");
+      // On macOS and Linux AppImage, process.cwd() is unreliable (often "/" or the launch dir).
+      // Use this.appDir which is correctly set per-platform: dirname(APPIMAGE) on Linux,
+      // dirname(exe) on packaged Windows, and process.cwd() in dev mode.
+      const defaultWalletDir = path.join(this.appDir, "wallets");
       if (
         !this.config_data.app.wallet_data_dir ||
         this.config_data.app.wallet_data_dir !== defaultWalletDir
@@ -779,6 +815,13 @@ export class Backend {
             status: { code: 0 }, // Ready
             daemon_connected: false
           });
+
+          // Start price ticker — fetch immediately then every 5 minutes
+          this.fetchXEQPrice();
+          this.priceInterval = setInterval(
+            () => this.fetchXEQPrice(),
+            5 * 60 * 1000
+          );
 
           // Auto-connect for legacy remote, otherwise show welcome message
           if (shouldAutoConnect) {
@@ -923,6 +966,10 @@ export class Backend {
 
   quit() {
     return new Promise(resolve => {
+      if (this.priceInterval) {
+        clearInterval(this.priceInterval);
+        this.priceInterval = null;
+      }
       let process = [];
       if (this.daemon) {
         process.push(this.daemon.quit());

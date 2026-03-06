@@ -39,6 +39,9 @@
                 <q-tooltip>{{ $t("menuItems.rescanWallet") }}</q-tooltip>
               </q-btn>
             </div>
+            <div v-if="balancestakeselector === 'balance' && is_legacy" class="usd-value">
+              <q-icon name="attach_money" size="13px" />{{ usdValue }}
+            </div>
           </div>
           <div v-if="balancestakeselector != 'stake'" class="row unlocked">
             <span
@@ -93,13 +96,26 @@ export default {
       balancestakeselector: "balance"
     };
   },
-  computed: mapState({
-    theme: state => state.gateway.app.config.appearance.theme,
-    info: state => state.gateway.wallet.info,
-    daemon_height: state => state.gateway.daemon.info.height,
-    tx_list: state => state.gateway.wallet.transactions.tx_list,
-    is_wallet_open: state =>
-      state.gateway.wallet.info && state.gateway.wallet.info.name,
+  computed: {
+    ...mapState({
+      theme: state => state.gateway.app.config.appearance.theme,
+      info: state => state.gateway.wallet.info,
+      daemon_height: state => state.gateway.daemon.info.height,
+      tx_list: state => state.gateway.wallet.transactions.tx_list,
+      xeq_price: state => state.gateway.app.xeq_price,
+      net_type: state => state.gateway.app.config?.app?.net_type,
+      is_wallet_open: state =>
+        state.gateway.wallet.info && state.gateway.wallet.info.name
+    }),
+    is_legacy() {
+      return this.net_type === "legacy";
+    },
+    usdValue() {
+      if (this.xeq_price === null || this.xeq_price === undefined) return "≈ ---";
+      const xeq = (this.info?.balance || 0) / 1e4;
+      const usd = xeq * this.xeq_price;
+      return `≈ ${usd.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USD`;
+    },
     fundsLocked() {
       return (
         this.info.balance > 0 && this.info.unlocked_balance < this.info.balance
@@ -136,7 +152,7 @@ export default {
 
       return "Unlocking...";
     }
-  }),
+  },
   methods: {
     rescanWallet() {
       this.$q
@@ -191,6 +207,13 @@ export default {
         }
       }
 
+      .usd-value {
+        font-size: 13px;
+        font-family: "JetBrains Mono", monospace;
+        color: rgba(0, 212, 255, 0.65);
+        margin-top: 2px;
+        letter-spacing: 0.02em;
+      }
       .text {
         font-size: 16px;
         color: rgba(255, 255, 255, 0.6);

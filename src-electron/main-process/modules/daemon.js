@@ -219,9 +219,8 @@ export class Daemon {
         args.push("--confirm-external-bind");
       }
 
-      // Add bootstrap/priority nodes for testnet
+      // Priority node for testnet bootstrap (P2P port 18080)
       if (net_type === "testnet") {
-        // Add priority node for testnet bootstrap
         args.push("--add-priority-node", "84.247.143.210:18080");
       }
 

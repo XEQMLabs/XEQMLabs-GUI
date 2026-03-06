@@ -132,10 +132,6 @@ export default configure(function () {
             {
               target: "nsis",
               arch: ["x64"]
-            },
-            {
-              target: "portable",
-              arch: ["x64"]
             }
           ],
           icon: "src-electron/icons/icon_512x512.png",
@@ -150,10 +146,6 @@ export default configure(function () {
           shortcutName: "XEQ GUI"
         },
 
-        portable: {
-          artifactName: "XEQ-GUI-${version}-Windows-Portable.exe"
-        },
-
         linux: {
           target: ["AppImage"],
           icon: "src-electron/icons/linux-512x512.png",
@@ -161,7 +153,7 @@ export default configure(function () {
         },
 
         mac: {
-          target: ["dmg", "zip"],
+          target: ["dmg"],
           icon: "src-electron/icons/icon.icns",
           category: "public.app-category.finance",
           hardenedRuntime: true,

@@ -451,7 +451,7 @@ export default {
   }
 
   .network-selector {
-    min-width: 140px;
+    width: 175px;
     background-color: rgba(255, 255, 255, 0.2);
     border-radius: 4px;
 
@@ -459,6 +459,13 @@ export default {
       color: inherit;
       min-height: 28px;
       font-size: 13px;
+    }
+
+    .q-field__native,
+    .q-select__input {
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
     }
   }
 

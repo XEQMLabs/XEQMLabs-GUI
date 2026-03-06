@@ -73,6 +73,7 @@ out/
 packages/
 *.dmg
 *.exe
+!prebuilt/**/*.exe
 *.deb
 *.rpm
 *.AppImage

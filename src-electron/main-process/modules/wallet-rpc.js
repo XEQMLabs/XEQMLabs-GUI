@@ -787,7 +787,9 @@ export class WalletRPC {
       this.wallet_state.name = filename;
       this.wallet_state.open = true;
 
-      this.backend.syncWalletsToBackup(true);
+      // Defer backup by 500ms on Windows — wallet-rpc holds a file lock on .keys
+      // immediately after creation (EBUSY), so a direct copySync would fail silently.
+      setTimeout(() => this.backend.syncWalletsToBackup(true), process.platform === "win32" ? 500 : 0);
       this.finalizeNewWallet(filename);
     });
   }
@@ -864,7 +866,7 @@ export class WalletRPC {
       this.wallet_state.name = filename;
       this.wallet_state.open = true;
 
-      this.backend.syncWalletsToBackup(true);
+      setTimeout(() => this.backend.syncWalletsToBackup(true), process.platform === "win32" ? 500 : 0);
       this.finalizeNewWallet(filename);
     });
   }
@@ -933,7 +935,7 @@ export class WalletRPC {
       this.wallet_state.name = filename;
       this.wallet_state.open = true;
 
-      this.backend.syncWalletsToBackup(true);
+      setTimeout(() => this.backend.syncWalletsToBackup(true), process.platform === "win32" ? 500 : 0);
       this.finalizeNewWallet(filename);
     });
   }
@@ -1022,12 +1024,8 @@ export class WalletRPC {
           this.wallet_state.password = password;
           this.wallet_state.name = wallet_name;
           this.wallet_state.open = true;
-          this.backend.syncWalletsToBackup(true);
-          // Refresh wallet list with address so imported wallet shows address in list (like restored)
-          this.sendRPC("get_address", { account_index: 0 }, 5000).then(addrRes => {
-            const address = (addrRes && addrRes.result && addrRes.result.address) ? addrRes.result.address : "";
-            this.listWallets(false, { name: wallet_name, address });
-          }).catch(() => {});
+          // finalizeNewWallet calls get_address internally and updates wallet list with address
+          setTimeout(() => this.backend.syncWalletsToBackup(true), process.platform === "win32" ? 500 : 0);
           this.finalizeNewWallet(wallet_name);
         })
         .catch(() => {
@@ -1156,42 +1154,13 @@ export class WalletRPC {
           timeout: 10000
         });
 
-        // Check wallet height and refresh if needed
+        // Log wallet height for diagnostics. Do NOT call refresh() explicitly here —
+        // wallet-rpc refreshes automatically on open, and refresh() is a blocking RPC
+        // that would stall the entire serial queue (heartbeats, balance, etc.) for the
+        // full sync duration. The syncPoller and heartbeat track progress instead.
         this.sendRPC("getheight", {}, 5000).then(heightResult => {
           const walletHeight = heightResult.result?.height || 0;
-          this.backend.sendLog("info", `Wallet height on open: ${walletHeight}`);
-
-          // If wallet is at a very low height, do a full refresh from block 0
-          if (walletHeight < 100) {
-            this.backend.sendLog("info", "Wallet needs full sync - calling refresh with start_height=0...");
-            this.isRefreshing = true;
-            const startTime = Date.now();
-            this.sendRPC("refresh", { start_height: 0 }, 600000).then(refreshResult => {
-              this.isRefreshing = false;
-              const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
-              const blocks = refreshResult.result?.blocks_fetched || 0;
-              this.backend.sendLog("info", `Refresh completed in ${elapsed}s - blocks: ${blocks}, full result: ${JSON.stringify(refreshResult)}`);
-
-              // Get balance after refresh
-              this.sendRPC("getbalance", { account_index: 0 }, 10000).then(balResult => {
-                const bal = balResult.result?.balance || 0;
-                const unlocked = balResult.result?.unlocked_balance || 0;
-                this.backend.sendLog("info", `Balance after refresh: ${(bal/1e9).toFixed(4)} XEQ (unlocked: ${(unlocked/1e9).toFixed(4)} XEQ)`);
-                this.wallet_state.balance = bal;
-                this.wallet_state.unlocked_balance = unlocked;
-                this.sendGateway("set_wallet_data", { info: { balance: bal, unlocked_balance: unlocked } });
-              });
-            }).catch(err => {
-              this.isRefreshing = false;
-              this.backend.sendLog("warn", `Refresh failed: ${err.message || err}`);
-            });
-          } else {
-            this.backend.sendLog("info", `Wallet already at height ${walletHeight}, doing quick refresh...`);
-            this.sendRPC("refresh", {}, 60000).then(refreshResult => {
-              const blocks = refreshResult.result?.blocks_fetched || 0;
-              this.backend.sendLog("info", `Quick refresh done - ${blocks} blocks`);
-            });
-          }
+          this.backend.sendLog("info", `Wallet height on open: ${walletHeight} — wallet-rpc will auto-sync`);
         }).catch(err => {
           this.backend.sendLog("warn", `getheight failed: ${err.message || err}`);
         });

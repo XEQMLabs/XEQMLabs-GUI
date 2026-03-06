@@ -3,7 +3,7 @@
     <q-header class="shift-title">
       <MainMenu />
       <q-toolbar-title>
-        <div class="flex items-center justify-center" style="margin:8px">
+        <div class="flex items-center justify-center" style="margin:8px; margin-left:0">
           <img src="Equilibria.svg" height="32" />
         </div>
       </q-toolbar-title>

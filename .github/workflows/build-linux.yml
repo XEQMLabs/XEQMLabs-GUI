@@ -21,16 +21,23 @@ jobs:
           wget -q https://github.com/EquilibriaCC/Equilibria/releases/download/v22.0.0/build-depends-x86_64-linux.zip -O legacy.zip
           unzip -o legacy.zip
           for NAME in xeq-wallet-rpc wallet-rpc; do
-            F=$(find . -path ./node_modules -prune -o -path ./.git -prune -o -path ./bin -prune -o -type f -name "$NAME" -print | head -1)
+            F=$(find . -path ./node_modules -prune -o -path ./.git -prune -o -path ./bin -prune -o -path ./prebuilt -prune -o -type f -name "$NAME" -print | head -1)
             if [ -n "$F" ]; then
               cp "$F" ./bin-legacy/xeq-wallet-rpc
               break
             fi
           done
           for NAME in xeq-d daemon equilibriad; do
-            F=$(find . -path ./node_modules -prune -o -path ./.git -prune -o -path ./bin -prune -o -type f -name "$NAME" -print | head -1)
+            F=$(find . -path ./node_modules -prune -o -path ./.git -prune -o -path ./bin -prune -o -path ./prebuilt -prune -o -type f -name "$NAME" -print | head -1)
             if [ -n "$F" ]; then
               cp "$F" ./bin-legacy/xeq-d
+              break
+            fi
+          done
+          for NAME in xeq-wallet-cli wallet-cli; do
+            F=$(find . -path ./node_modules -prune -o -path ./.git -prune -o -path ./bin -prune -o -path ./prebuilt -prune -o -type f -name "$NAME" -print | head -1)
+            if [ -n "$F" ]; then
+              cp "$F" ./bin-legacy/xeq-wallet-cli
               break
             fi
           done
@@ -48,6 +55,7 @@ jobs:
           echo "=== Extracting binaries from /usr/local/bin/ ==="
           docker cp temp-extract:/usr/local/bin/xeq-wallet-rpc ./bin/
           docker cp temp-extract:/usr/local/bin/xeq-d ./bin/
+          docker cp temp-extract:/usr/local/bin/xeq-wallet-cli ./bin/ 2>/dev/null && echo "Got xeq-wallet-cli" || echo "xeq-wallet-cli not in Docker image (skipping)"
           docker rm temp-extract
           chmod +x bin/*
           echo "=== bin/ contents ==="
