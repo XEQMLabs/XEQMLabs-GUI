@@ -463,7 +463,7 @@ export class Backend {
    */
   fetchXEQPrice() {
     const PRICE_URL =
-      "https://api.coingecko.com/api/v3/simple/price?ids=equilibria&vs_currencies=usd";
+      "https://api.coingecko.com/api/v3/simple/price?ids=triton&vs_currencies=usd";
     fetch(PRICE_URL, {
       method: "GET",
       headers: { Accept: "application/json" },
@@ -475,7 +475,7 @@ export class Backend {
       })
       .then(data => {
         // Strict validation — never trust external data blindly
-        const price = data?.equilibria?.usd;
+        const price = data?.triton?.usd;
         if (
           typeof price !== "number" ||
           !Number.isFinite(price) ||
@@ -816,11 +816,11 @@ export class Backend {
             daemon_connected: false
           });
 
-          // Start price ticker — fetch immediately then every 5 minutes
+          // Start price ticker — fetch immediately then every 2 minutes
           this.fetchXEQPrice();
           this.priceInterval = setInterval(
             () => this.fetchXEQPrice(),
-            5 * 60 * 1000
+            2 * 60 * 1000
           );
 
           // Auto-connect for legacy remote, otherwise show welcome message

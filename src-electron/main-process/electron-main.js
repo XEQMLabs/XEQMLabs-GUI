@@ -101,12 +101,17 @@ function createWindow() {
     ...(iconPath ? { icon: iconPath } : {}),
     title,
     backgroundColor: "#000000",
+    show: false,
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
       sandbox: false,
       preload: path.resolve(__dirname, "electron-preload.js")
     }
+  });
+
+  mainWindow.once("ready-to-show", () => {
+    mainWindow.show();
   });
 
   mainWindow.on("close", e => {
