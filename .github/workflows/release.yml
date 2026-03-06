@@ -45,7 +45,7 @@ jobs:
         run: |
           New-Item -ItemType Directory -Force -Path bin-legacy | Out-Null
           Write-Host "=== Downloading Legacy v22.0.0 Windows binaries ==="
-          Invoke-WebRequest -Uri "https://github.com/EquilibriaCC/Equilibria/releases/download/v22.0.0/build-depends-windows-x86_64.zip" -OutFile legacy.zip
+          Invoke-WebRequest -Uri "https://github.com/EquilibriaCC/Equilibria/releases/download/v22.0.0/build-depends-windows-x64.zip" -OutFile legacy.zip
           Expand-Archive -Path legacy.zip -DestinationPath legacy-extract -Force
           $walletRpc = Get-ChildItem -Path legacy-extract -Recurse -Filter "xeq-wallet-rpc.exe" | Select-Object -First 1
           $daemon    = Get-ChildItem -Path legacy-extract -Recurse -Filter "xeq-d.exe"           | Select-Object -First 1
