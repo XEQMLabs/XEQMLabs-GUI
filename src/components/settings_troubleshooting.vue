@@ -28,7 +28,22 @@
       </q-btn>
     </div>
 
-    <div ref="logContainer" class="log-container">
+    <div
+      ref="logContainer"
+      class="log-container"
+      @scroll="onScroll"
+    >
+      <q-btn
+        v-if="userScrolled"
+        flat
+        dense
+        size="xs"
+        icon="arrow_downward"
+        label="Jump to bottom"
+        color="primary"
+        class="jump-btn"
+        @click="jumpToBottom"
+      />
       <div v-if="filteredLogs.length === 0" class="log-empty">
         No log entries yet. Errors and events will appear here as they occur.
       </div>
@@ -54,7 +69,8 @@ export default {
   name: "SettingsTroubleshooting",
   data() {
     return {
-      levelFilter: "all"
+      levelFilter: "all",
+      userScrolled: false
     };
   },
   computed: {
@@ -84,6 +100,7 @@ export default {
   },
   watch: {
     filteredLogs() {
+      if (this.userScrolled) return;
       this.$nextTick(() => {
         const el = this.$refs.logContainer;
         if (el) el.scrollTop = el.scrollHeight;
@@ -98,6 +115,17 @@ export default {
         "." +
         String(d.getMilliseconds()).padStart(3, "0")
       );
+    },
+    onScroll() {
+      const el = this.$refs.logContainer;
+      if (!el) return;
+      const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
+      this.userScrolled = !atBottom;
+    },
+    jumpToBottom() {
+      const el = this.$refs.logContainer;
+      if (el) el.scrollTop = el.scrollHeight;
+      this.userScrolled = false;
     },
     copyLogs() {
       const text = this.filteredLogs
@@ -136,6 +164,16 @@ export default {
   overflow-y: auto;
   overflow-x: hidden;
   word-break: break-word;
+}
+
+.jump-btn {
+  position: sticky;
+  top: 4px;
+  float: right;
+  z-index: 10;
+  background: rgba(18, 159, 202, 0.15);
+  border: 1px solid rgba(18, 159, 202, 0.4);
+  border-radius: 4px;
 }
 
 .log-empty {

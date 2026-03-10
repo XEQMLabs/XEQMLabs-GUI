@@ -33,6 +33,12 @@ export const set_prove_transaction_status = (state, data) => {
     ...data
   };
 };
+export const set_tx_confirmation_status = (state, data) => {
+  state.tx_confirmation_status = {
+    ...state.tx_confirmation_status,
+    ...data
+  };
+};
 export const set_check_transaction_status = (state, data) => {
   state.check_transaction_status = {
     ...state.check_transaction_status,

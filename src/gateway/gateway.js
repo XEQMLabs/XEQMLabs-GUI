@@ -261,6 +261,10 @@ export class Gateway {
         this.store.commit("gateway/set_snode_status", data);
         break;
       }
+      case "set_tx_confirmation_status": {
+        this.store.commit("gateway/set_tx_confirmation_status", decrypted_data.data);
+        break;
+      }
       case "set_prove_transaction_status": {
         const data = { ...decrypted_data.data };
 

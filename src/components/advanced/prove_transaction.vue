@@ -57,12 +57,64 @@
           />
         </OxenField>
         -->
+        <!-- Confirmation status -->
+        <div v-if="txid.length >= 64" class="q-mt-md q-mb-xs">
+          <span
+            v-if="confirmationStatus.code === 1"
+            style="font-size: 12px; color: #888;"
+          >
+            Checking confirmations...
+          </span>
+          <span
+            v-else-if="confirmationStatus.code === -1"
+            style="font-size: 12px; color: #ff4444; font-weight: 600;"
+          >
+            {{ confirmationStatus.message }}
+          </span>
+          <span
+            v-else-if="confirmationStatus.code === 0"
+            style="font-size: 12px; color: #ffab40; font-weight: 600;"
+          >
+            Transaction not yet confirmed — waiting for first block
+          </span>
+          <span
+            v-else-if="confirmationStatus.code === 2 && confirmationStatus.confirmations < 50"
+            style="font-size: 12px; color: #ffab40; font-weight: 600;"
+          >
+            {{ confirmationStatus.confirmations }} / 50 confirmations — {{ 50 - confirmationStatus.confirmations }} more needed before generating
+          </span>
+          <span
+            v-else-if="confirmationStatus.code === 2 && confirmationStatus.confirmations >= 50"
+            style="font-size: 12px; color: #69f0ae; font-weight: 600;"
+          >
+            {{ confirmationStatus.confirmations }} confirmations — ready to generate
+          </span>
+        </div>
+
+        <div class="q-mt-md q-mb-md">
+          <span
+            style="
+              display: inline-block;
+              padding: 8px 14px;
+              background: rgba(220, 0, 0, 0.12);
+              border: 1px solid rgba(220, 0, 0, 0.5);
+              border-radius: 8px;
+              font-size: 12px;
+              font-weight: 700;
+              color: #ff4444;
+              text-align: left;
+              line-height: 1.5;
+            "
+          >
+            PLEASE WAIT 50 CONFIRMATIONS (50 BLOCKS) BEFORE GENERATING PROOF, YOU MAY LOSE FUNDS IF YOU GENERATE A PROOF BEFORE 50 CONFIRMATIONS.
+          </span>
+        </div>
         <div class="buttons submit-button">
           <q-btn
             color="primary"
             :label="$t('buttons.generate')"
             :loading="status.code === 1"
-            :disable="status.code === 1"
+            :disable="status.code === 1 || !canGenerate"
             @click="generate"
           />
           <q-btn
@@ -139,17 +191,26 @@ export default {
     return {
       txid: "",
       address: "",
-      message: ""
+      message: "",
+      txidCheckTimer: null,
+      confirmationPollTimer: null
     };
   },
   computed: {
     ...mapState({
       theme: state => state.gateway.app.config.appearance.theme,
       status: state => state.gateway.prove_transaction_status,
+      confirmationStatus: state => state.gateway.tx_confirmation_status,
       canClear() {
         return this.txid !== "" || this.address !== "" || this.message !== "";
       }
     }),
+    canGenerate() {
+      const s = this.confirmationStatus;
+      if (this.txid.trim().length < 64) return true; // No TXID entered yet — don't block
+      // Only allow generate when we have explicitly confirmed 50+ — block everything else
+      return s.code === 2 && s.confirmations >= 50;
+    },
     proveTxStatusCode() {
       return this.status ? this.status.code : 0;
     }
@@ -160,6 +221,16 @@ export default {
         this.resetAndApplyQuery();
       },
       deep: true
+    },
+    txid(val) {
+      this.stopConfirmationPoll();
+      clearTimeout(this.txidCheckTimer);
+      this.$store.commit("gateway/set_tx_confirmation_status", { code: 0, confirmations: null, message: "" });
+      if (val.trim().length < 64) return;
+      this.txidCheckTimer = setTimeout(() => {
+        this.checkConfirmations();
+        this.startConfirmationPoll();
+      }, 600);
     },
     proveTxStatusCode(code, oldCode) {
       if (code === oldCode) return;
@@ -180,6 +251,10 @@ export default {
   activated() {
     this.resetAndApplyQuery();
   },
+  beforeUnmount() {
+    this.stopConfirmationPoll();
+    clearTimeout(this.txidCheckTimer);
+  },
   validations: {
     txid: { required },
     address: {
@@ -196,11 +271,31 @@ export default {
     }
   },
   methods: {
+    checkConfirmations() {
+      this.$gateway.send("wallet", "get_tx_confirmations", { txid: this.txid.trim() });
+    },
+    startConfirmationPoll() {
+      this.stopConfirmationPoll();
+      this.confirmationPollTimer = setInterval(() => {
+        if (this.txid.trim().length < 64) return this.stopConfirmationPoll();
+        const s = this.confirmationStatus;
+        // Stop polling once we have 50+ confirmations or got an error
+        if (s.code === -1 || (s.code === 2 && s.confirmations >= 50)) return this.stopConfirmationPoll();
+        this.checkConfirmations();
+      }, 10000);
+    },
+    stopConfirmationPoll() {
+      clearInterval(this.confirmationPollTimer);
+      this.confirmationPollTimer = null;
+    },
     resetAndApplyQuery() {
+      this.stopConfirmationPoll();
+      clearTimeout(this.txidCheckTimer);
       this.txid = "";
       this.address = "";
       this.message = "";
       this.v$.$reset();
+      this.$store.commit("gateway/set_tx_confirmation_status", { code: 0, confirmations: null, message: "" });
       this.$store.commit("gateway/set_prove_transaction_status", {
         code: 0,
         message: "",

@@ -583,6 +583,10 @@ export class WalletRPC {
         );
         break;
 
+      case "get_tx_confirmations":
+        this.getTxConfirmations(params.txid);
+        break;
+
       case "prove_transaction":
         this.proveTransaction(params.txid, params.address, params.message);
         break;
@@ -1196,6 +1200,7 @@ export class WalletRPC {
       this.wallet_state.password = password;
       this.wallet_state.name = filename;
       this.wallet_state.open = true;
+      this.autoSyncRefreshDone = false; // Reset per wallet open — allows one auto-refresh per session
 
       if (hardware_wallet) {
         this.startHeartbeat(10);
@@ -1250,6 +1255,7 @@ export class WalletRPC {
     this.syncPollerActive = true;
     this.lastSyncHeight = 0;
     this.syncStableCount = 0;
+    this.syncPollerSawMovement = false;
 
     this.syncPoller = setInterval(() => {
       if (!this.syncPollerActive) {
@@ -1278,11 +1284,24 @@ export class WalletRPC {
           // If height stable for 5 polls (5 seconds) AND at a reasonable height, assume sync complete
           if (this.syncStableCount >= 5 && height > 1000) {
             this.stopSyncPoller();
-            this.backend.sendLog("info", `Wallet sync complete at height ${height}`);
+            this.backend.sendLog("info", `Wallet caught up to block ${height}`);
+
+            // Auto-refresh once after sync if the wallet was actually behind on open.
+            // This fixes the common "stuck at 99%" issue where wallet-rpc's internal
+            // state hasn't fully settled even though the chain is synced.
+            // autoSyncRefreshDone is reset on wallet open, ensuring this fires at most once per session.
+            if (this.syncPollerSawMovement && !this.autoSyncRefreshDone) {
+              this.autoSyncRefreshDone = true;
+              this.backend.sendLog("info", "Auto-refreshing wallet connection to finalize sync");
+              setTimeout(() => {
+                this.refreshWallet("auto-sync");
+              }, 3000);
+            }
           }
         } else {
           this.syncStableCount = 0;
           this.lastSyncHeight = height;
+          this.syncPollerSawMovement = true;
         }
       });
     }, 1000); // Poll every 1 second
@@ -2605,6 +2624,58 @@ export class WalletRPC {
     );
   }
 
+  async getTxConfirmations(txid) {
+    // Signal checking state
+    this.sendGateway("set_tx_confirmation_status", {
+      code: 1,
+      confirmations: null,
+      message: "Checking transaction..."
+    });
+
+    try {
+      const [txResult, heightResult] = await Promise.all([
+        this.sendRPC("get_transfer_by_txid", { txid }, 10000),
+        this.sendRPC("getheight", {}, 5000)
+      ]);
+
+      // TX not found or wrong wallet
+      if (txResult.hasOwnProperty("error") || !txResult.result || !txResult.result.transfer) {
+        this.sendGateway("set_tx_confirmation_status", {
+          code: -1,
+          confirmations: null,
+          message: "Invalid TXID or wrong wallet — please verify your TXID"
+        });
+        return;
+      }
+
+      const txHeight = txResult.result.transfer.height;
+      const currentHeight = heightResult.result ? heightResult.result.height : 0;
+
+      // Height 0 means tx is in mempool, not yet confirmed
+      if (!txHeight || txHeight === 0) {
+        this.sendGateway("set_tx_confirmation_status", {
+          code: 0,
+          confirmations: 0,
+          message: "Transaction not yet confirmed — waiting for first block"
+        });
+        return;
+      }
+
+      const confirmations = currentHeight - txHeight;
+      this.sendGateway("set_tx_confirmation_status", {
+        code: 2,
+        confirmations,
+        message: ""
+      });
+    } catch (e) {
+      this.sendGateway("set_tx_confirmation_status", {
+        code: -1,
+        confirmations: null,
+        message: "Could not check transaction — please verify your TXID"
+      });
+    }
+  }
+
   proveTransaction(txid, address, message) {
     const _address = address && address.trim() !== "" ? address.trim() : null;
     const _message = message && message.trim() !== "" ? message.trim() : null;
@@ -2743,19 +2814,15 @@ export class WalletRPC {
   }
 
   // Refresh RPC connection - closes and reopens the wallet to clear stuck state
-  async refreshWallet() {
-    console.log(
-      "[WalletRPC] Refreshing RPC wallet connection (process restart)..."
-    );
-    this.backend.sendLog(
-      "info",
-      "Refreshing RPC wallet connection (process restart)..."
-    );
+  async refreshWallet(source = "manual") {
+    const label = source === "auto-sync" ? "Auto-refresh" : "Manual refresh";
+    console.log(`[WalletRPC] ${label}: restarting wallet-rpc process`);
+    this.backend.sendLog("info", `${label}: restarting wallet connection`);
 
     this.sendGateway("set_wallet_data", {
       status: {
         code: 0,
-        message: "Refreshing RPC wallet connection..."
+        message: "Refreshing wallet connection..."
       }
     });
 
@@ -2812,7 +2879,7 @@ export class WalletRPC {
         console.log("[WalletRPC] postTxRefresh: killed wallet-rpc process");
         this.backend.sendLog(
           "warn",
-          "Wallet RPC process killed for post-TX recovery"
+          "Wallet-rpc process stopped — preparing for restart"
         );
       } catch (e) {
         console.error(
@@ -2967,7 +3034,7 @@ export class WalletRPC {
       });
 
       console.log("[WalletRPC] postTxRefresh: wallet-rpc process ready");
-      this.backend.sendLog("info", "Wallet RPC restarted and ready");
+      this.backend.sendLog("info", "Wallet-rpc restarted — reopening wallet");
 
       // Open the wallet
       const openResult = await this.sendRPC(
@@ -3007,7 +3074,7 @@ export class WalletRPC {
 
     this.startHeartbeat();
     console.log("[WalletRPC] postTxRefresh: recovery complete");
-    this.backend.sendLog("info", "Post-TX recovery complete — wallet synced");
+    this.backend.sendLog("info", "Wallet connection refresh complete — ready");
   }
 
   getPrivateKeys(password) {

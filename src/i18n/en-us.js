@@ -547,7 +547,7 @@ export default {
     proveTransactionDescription:
       "Generate a transaction proof to submit on the swap portal. Paste your Transaction ID and the address you sent to below, then click Generate.",
     proveTransactionConfirmationNote:
-      "Please wait for at least 2 confirmations before generating a proof. Attempting too early may fail.",
+      "Please wait for at least 50 confirmations before generating a proof. Attempting too early may fail.",
     readingWalletList: "Reading wallet list",
     recentIncomingTransactionsToAddress:
       "Recent incoming transactions to this address",

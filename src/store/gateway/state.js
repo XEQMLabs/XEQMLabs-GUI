@@ -98,6 +98,11 @@ export default {
     i18n: "",
     state: {}
   },
+  tx_confirmation_status: {
+    code: 0, // 0=idle, 1=checking, 2=confirmed, -1=error
+    confirmations: null,
+    message: ""
+  },
   check_transaction_status: {
     code: 0,
     message: "",
