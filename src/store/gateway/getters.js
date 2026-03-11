@@ -8,6 +8,8 @@ export const isReady = state => {
       state.daemon.info.height,
       state.daemon.info.target_height
     );
+    // Local daemon must also be fully synced — wallet height alone is not enough
+    if (state.daemon.info.height < target_height - 1) return false;
   } else {
     target_height = state.daemon.info.height;
   }
@@ -25,6 +27,8 @@ export const isAbleToSend = state => {
       state.daemon.info.height,
       state.daemon.info.target_height
     );
+    // Local daemon must also be fully synced before allowing sends
+    if (state.daemon.info.height < target_height - 1) return false;
   } else {
     target_height = state.daemon.info.height;
   }

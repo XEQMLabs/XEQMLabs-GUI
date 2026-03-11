@@ -600,6 +600,13 @@ export class Daemon {
       }
       this.sendGateway("set_daemon_data", daemon_info);
 
+      if (gotInfo) {
+        const h = daemon_info.info.height || 0;
+        const target = daemon_info.info.target_height || h;
+        // Share effective chain tip with wallet-rpc so it can detect true sync completion
+        this.backend.daemonHeight = Math.max(h, target);
+      }
+
       if (gotInfo && this.daemonHeartbeatCount % 6 === 1) {
         const h = daemon_info.info.height || 0;
         const target = daemon_info.info.target_height || h;

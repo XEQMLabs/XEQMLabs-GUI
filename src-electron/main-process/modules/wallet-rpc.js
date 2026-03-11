@@ -790,6 +790,7 @@ export class WalletRPC {
       this.wallet_state.password = password;
       this.wallet_state.name = filename;
       this.wallet_state.open = true;
+      this.autoSyncRefreshDone = false;
 
       // Defer backup by 500ms on Windows — wallet-rpc holds a file lock on .keys
       // immediately after creation (EBUSY), so a direct copySync would fail silently.
@@ -869,6 +870,7 @@ export class WalletRPC {
       this.wallet_state.password = password;
       this.wallet_state.name = filename;
       this.wallet_state.open = true;
+      this.autoSyncRefreshDone = false;
 
       setTimeout(() => this.backend.syncWalletsToBackup(true), process.platform === "win32" ? 500 : 0);
       this.finalizeNewWallet(filename);
@@ -938,6 +940,7 @@ export class WalletRPC {
       this.wallet_state.password = password;
       this.wallet_state.name = filename;
       this.wallet_state.open = true;
+      this.autoSyncRefreshDone = false;
 
       setTimeout(() => this.backend.syncWalletsToBackup(true), process.platform === "win32" ? 500 : 0);
       this.finalizeNewWallet(filename);
@@ -1028,6 +1031,7 @@ export class WalletRPC {
           this.wallet_state.password = password;
           this.wallet_state.name = wallet_name;
           this.wallet_state.open = true;
+          this.autoSyncRefreshDone = false;
           // finalizeNewWallet calls get_address internally and updates wallet list with address
           setTimeout(() => this.backend.syncWalletsToBackup(true), process.platform === "win32" ? 500 : 0);
           this.finalizeNewWallet(wallet_name);
@@ -1253,12 +1257,13 @@ export class WalletRPC {
   startSyncPoller() {
     clearInterval(this.syncPoller);
     this.syncPollerActive = true;
+    this.syncCompleted = false;
     this.lastSyncHeight = 0;
     this.syncStableCount = 0;
     this.syncPollerSawMovement = false;
 
     this.syncPoller = setInterval(() => {
-      if (!this.syncPollerActive) {
+      if (!this.syncPollerActive || this.syncCompleted) {
         clearInterval(this.syncPoller);
         return;
       }
@@ -1276,32 +1281,36 @@ export class WalletRPC {
           info: { height }
         });
 
-        // Track if height has stabilized (not changing = sync complete)
-        // But only consider sync complete if we're at a reasonable height (> 1000)
-        // And not while refresh is in progress
-        if (height === this.lastSyncHeight && !this.isRefreshing) {
-          this.syncStableCount++;
-          // If height stable for 5 polls (5 seconds) AND at a reasonable height, assume sync complete
-          if (this.syncStableCount >= 5 && height > 1000) {
-            this.stopSyncPoller();
-            this.backend.sendLog("info", `Wallet caught up to block ${height}`);
-
-            // Auto-refresh once after sync if the wallet was actually behind on open.
-            // This fixes the common "stuck at 99%" issue where wallet-rpc's internal
-            // state hasn't fully settled even though the chain is synced.
-            // autoSyncRefreshDone is reset on wallet open, ensuring this fires at most once per session.
-            if (this.syncPollerSawMovement && !this.autoSyncRefreshDone) {
-              this.autoSyncRefreshDone = true;
-              this.backend.sendLog("info", "Auto-refreshing wallet connection to finalize sync");
-              setTimeout(() => {
-                this.refreshWallet("auto-sync");
-              }, 3000);
-            }
-          }
-        } else {
-          this.syncStableCount = 0;
-          this.lastSyncHeight = height;
+        // Track movement — if height ever changes, the wallet was behind on open
+        if (height !== this.lastSyncHeight) {
           this.syncPollerSawMovement = true;
+          this.lastSyncHeight = height;
+          this.syncStableCount = 0;
+        } else {
+          this.syncStableCount++;
+        }
+
+        // Determine if wallet has reached the chain tip.
+        // Primary signal: wallet height is within 3 blocks of the daemon's known tip.
+        // Fallback: height has been stable for 5+ polls and is above 1000 (daemon not yet known).
+        const daemonHeight = this.backend.daemonHeight || 0;
+        const atChainTip = daemonHeight > 0 && height >= daemonHeight - 3 && height > 1000;
+        const stableFallback = !daemonHeight && this.syncStableCount >= 5 && height > 1000;
+
+        if (atChainTip || stableFallback) {
+          this.syncCompleted = true;
+          this.stopSyncPoller();
+          this.backend.sendLog("info", `Wallet caught up to block ${height}${daemonHeight ? ` (daemon tip: ${daemonHeight})` : ""}`);
+
+          // Auto-refresh once per session, only if the wallet was actually behind on open.
+          // autoSyncRefreshDone resets on every wallet open — guarantees exactly one refresh.
+          if (this.syncPollerSawMovement && !this.autoSyncRefreshDone) {
+            this.autoSyncRefreshDone = true;
+            this.backend.sendLog("info", "Auto-refreshing wallet connection to finalize sync");
+            setTimeout(() => {
+              this.refreshWallet("auto-sync");
+            }, 3000);
+          }
         }
       });
     }, 1000); // Poll every 1 second
@@ -1318,6 +1327,7 @@ export class WalletRPC {
   }
 
   heartbeatAction(extended = false) {
+    if (this.isRestarting) return;
     this.heartbeatCount = (this.heartbeatCount || 0) + 1;
     Promise.all([
       this.sendRPC("get_address", { account_index: 0 }, 5000),
@@ -2854,6 +2864,7 @@ export class WalletRPC {
     );
 
     // Stop all heartbeats and abandon the stuck RPC queue
+    this.isRestarting = true;
     clearInterval(this.heartbeat);
     clearInterval(this.onsHeartbeat);
     this.stopSyncPoller();
@@ -3072,6 +3083,7 @@ export class WalletRPC {
     this.wallet_state.accrued_balance = null;
     this.wallet_state.accrued_balance_next_payout = null;
 
+    this.isRestarting = false;
     this.startHeartbeat();
     console.log("[WalletRPC] postTxRefresh: recovery complete");
     this.backend.sendLog("info", "Wallet connection refresh complete — ready");
