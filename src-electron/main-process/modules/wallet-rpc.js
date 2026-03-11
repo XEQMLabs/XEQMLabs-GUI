@@ -367,6 +367,7 @@ export class WalletRPC {
                   isRPCSyncing
                 });
                 this.isRPCSyncing = isRPCSyncing;
+                if (isRPCSyncing) this.lastSyncActivityTime = Date.now();
 
                 if (height && Date.now() - this.last_height_send_time > 1000) {
                   this.last_height_send_time = Date.now();
@@ -1306,10 +1307,8 @@ export class WalletRPC {
           // autoSyncRefreshDone resets on every wallet open — guarantees exactly one refresh.
           if (this.syncPollerSawMovement && !this.autoSyncRefreshDone) {
             this.autoSyncRefreshDone = true;
-            this.backend.sendLog("info", "Auto-refreshing wallet connection to finalize sync");
-            setTimeout(() => {
-              this.refreshWallet("auto-sync");
-            }, 3000);
+            this.backend.sendLog("info", "Auto-refreshing wallet state after sync");
+            this.autoRefreshAfterSync();
           }
         }
       });
@@ -1348,10 +1347,18 @@ export class WalletRPC {
       }
 
       if (rpcFailures.length > 0) {
-        this.backend.sendLog(
-          "error",
-          `Wallet RPC heartbeat failures — ${rpcFailures.join("; ")}`
-        );
+        this.consecutiveHeartbeatFailures = (this.consecutiveHeartbeatFailures || 0) + 1;
+        const n = this.consecutiveHeartbeatFailures;
+        if (n <= 3 || n % 10 === 0) {
+          this.backend.sendLog(
+            "error",
+            n > 3
+              ? `Wallet-rpc still unreachable (${n} failures) — may be scanning or starting up`
+              : `Wallet RPC heartbeat failures — ${rpcFailures.join("; ")}`
+          );
+        }
+      } else {
+        this.consecutiveHeartbeatFailures = 0;
       }
       let wallet = {
         status: {
@@ -2824,6 +2831,45 @@ export class WalletRPC {
   }
 
   // Refresh RPC connection - closes and reopens the wallet to clear stuck state
+  async autoRefreshAfterSync() {
+    this.lastSyncActivityTime = Date.now();
+    let refreshComplete = false;
+
+    // Watchdog: if wallet-rpc stdout goes silent for 60 seconds while refresh
+    // is pending, it's deadlocked — fall back to full kill+restart
+    const watchdog = setInterval(() => {
+      if (refreshComplete) {
+        clearInterval(watchdog);
+        return;
+      }
+      if (Date.now() - this.lastSyncActivityTime > 60000) {
+        clearInterval(watchdog);
+        refreshComplete = true;
+        this.backend.sendLog("warn", "Wallet-rpc silent for 60s — falling back to full restart");
+        this.postTxRefresh();
+      }
+    }, 5000);
+
+    try {
+      const result = await this.sendRPC("refresh", {}, 300000);
+      if (refreshComplete) return; // Watchdog already fired
+      refreshComplete = true;
+      clearInterval(watchdog);
+      if (result.hasOwnProperty("error")) {
+        this.backend.sendLog("warn", "Refresh RPC failed — falling back to full restart");
+        await this.postTxRefresh();
+      } else {
+        this.backend.sendLog("info", "Wallet state refreshed successfully after sync");
+      }
+    } catch (e) {
+      if (refreshComplete) return;
+      refreshComplete = true;
+      clearInterval(watchdog);
+      this.backend.sendLog("warn", "Refresh RPC timed out — falling back to full restart");
+      await this.postTxRefresh();
+    }
+  }
+
   async refreshWallet(source = "manual") {
     const label = source === "auto-sync" ? "Auto-refresh" : "Manual refresh";
     console.log(`[WalletRPC] ${label}: restarting wallet-rpc process`);
@@ -2996,6 +3042,7 @@ export class WalletRPC {
         }
         this.sendGateway("set_wallet_data", { isRPCSyncing });
         this.isRPCSyncing = isRPCSyncing;
+        if (isRPCSyncing) this.lastSyncActivityTime = Date.now();
         if (height && Date.now() - this.last_height_send_time > 1000) {
           this.last_height_send_time = Date.now();
           this.sendGateway("set_wallet_data", { info: { height } });
