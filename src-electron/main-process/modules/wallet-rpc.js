@@ -65,6 +65,23 @@ export class WalletRPC {
 
     this.agent = new http.Agent({ keepAlive: true, maxSockets: 1 });
     this.queue = new queue(1, Infinity);
+    // Incremented on every drainQueue() call — in-flight responses from the
+    // old queue generation are silently discarded instead of being processed.
+    this.queueGeneration = 0;
+    // Set true during finalizeNewWallet to prevent drainQueue from discarding
+    // query_key responses before the mnemonic reaches the UI.
+    this.isInitializing = false;
+
+    // RPC timeout constants (ms). Every sendRPC call must use one of these —
+    // no raw magic numbers, no zero (infinite) timeouts for any user-facing op.
+    this.T = {
+      FAST:    3000,   // get_address, getheight, get_languages, validate_address
+      MEDIUM:  8000,   // getbalance, get_transfers, get_address_book, ons_known_names
+      STORE:   10000,  // store — writing wallet to disk
+      OPEN:    20000,  // open_wallet, close_wallet, restore_deterministic_wallet
+      RELAY:   45000,  // relay_tx, transfer_split, sweep_all
+      REFRESH: 60000   // refresh — only used for explicit block scan during recovery
+    };
   }
 
   // Get the correct binary path based on network type
@@ -179,6 +196,14 @@ export class WalletRPC {
           "--log-level",
           "1"  // Normal logging (0=warning, 1=info, 2=debug)
         ];
+
+        // Disable SSL autodetect for plain HTTP daemon connections.
+        // Without this flag wallet-rpc tries TLS first, gets "wrong version number",
+        // drops the socket and reconnects — causing log noise and a visible stall.
+        // Only skip this when the address explicitly uses https://.
+        if (!daemon_address.startsWith("https://")) {
+          args.push("--daemon-ssl", "disabled");
+        }
 
         const { net_type, wallet_data_dir, data_dir } = options.app;
         this.net_type = net_type;
@@ -408,14 +433,23 @@ export class WalletRPC {
                 });
               }
 
+              // Poll until wallet-rpc responds. Each probe has a hard FAST timeout so
+              // slow calls don't stack up in the queue. Max 25 attempts = 25s ceiling.
+              let startupAttempts = 0;
               let intrvl = setInterval(() => {
-                this.sendRPC("get_languages").then(data => {
+                startupAttempts++;
+                if (startupAttempts > 25) {
+                  clearInterval(intrvl);
+                  this.backend.sendLog("error", `[${net_type}] wallet-rpc did not respond within 25s`);
+                  if (this.walletRPCProcess) this.walletRPCProcess.kill();
+                  this.walletRPCProcess = null;
+                  reject(new Error("Wallet RPC startup timeout"));
+                  return;
+                }
+                this.sendRPC("get_languages", {}, this.T.FAST).then(data => {
                   if (!data.hasOwnProperty("error")) {
                     clearInterval(intrvl);
-                    this.backend.sendLog(
-                      "info",
-                      "Wallet RPC started and responding"
-                    );
+                    this.backend.sendLog("info", "Wallet RPC started and responding");
                     resolve();
                   } else {
                     if (
@@ -423,8 +457,9 @@ export class WalletRPC {
                       data.error.cause &&
                       data.error.cause.code === "ECONNREFUSED"
                     ) {
-                      // Ignore
-                    } else {
+                      // Not bound yet — keep waiting
+                    } else if (data.error.code !== -99) {
+                      // Real error (not a stale-generation discard) — abort
                       clearInterval(intrvl);
                       this.backend.sendLog("error", `[${net_type}] Could not connect to wallet RPC after startup (port ${this.port})`);
                       if (this.walletRPCProcess) this.walletRPCProcess.kill();
@@ -1053,6 +1088,7 @@ export class WalletRPC {
     // We send the wallet data (including secrets) first, then start the
     // heartbeat. This ensures the UI has the mnemonic before navigating
     // to the created page (which is triggered by status code 0).
+    this.isInitializing = true;
     Promise.all([
       this.sendRPC("get_address", { account_index: 0 }, 10000),
       this.sendRPC("getheight", {}, 10000),
@@ -1121,7 +1157,8 @@ export class WalletRPC {
         this.listWallets(false, { name: filename, address: wallet.info.address });
       });
 
-      // Send wallet data with secrets FIRST
+      // Send wallet data with secrets FIRST, then clear the init guard
+      this.isInitializing = false;
       this.sendGateway("set_wallet_data", wallet);
 
       // THEN start heartbeat which will send status: { code: 0 }
@@ -1271,6 +1308,9 @@ export class WalletRPC {
 
       // Only poll height quickly during sync
       this.sendRPC("getheight", {}, 3000).then(data => {
+        // Multiple interval ticks may queue RPCs before the first one resolves.
+        // Once syncCompleted is set by the first resolved call, discard the rest.
+        if (this.syncCompleted) return;
         if (data.hasOwnProperty("error") || !data.hasOwnProperty("result")) {
           return;
         }
@@ -1349,6 +1389,8 @@ export class WalletRPC {
       if (rpcFailures.length > 0) {
         this.consecutiveHeartbeatFailures = (this.consecutiveHeartbeatFailures || 0) + 1;
         const n = this.consecutiveHeartbeatFailures;
+
+        // Log selectively — don't spam the log on every beat
         if (n <= 3 || n % 10 === 0) {
           this.backend.sendLog(
             "error",
@@ -1357,7 +1399,38 @@ export class WalletRPC {
               : `Wallet RPC heartbeat failures — ${rpcFailures.join("; ")}`
           );
         }
+
+        // Level 1 — 3 consecutive failures: drain the queue backlog.
+        // This clears any orphaned calls that are blocking the queue without
+        // triggering a process restart. If the node came back, the next
+        // heartbeat will succeed and the counter resets.
+        // Skip drain during wallet initialization — draining would discard
+        // in-flight query_key RPCs and cause the mnemonic to be empty.
+        if (n === 3 && !this.isInitializing) {
+          this.backend.sendLog("warn", "Heartbeat stalled — draining queue to clear backlog");
+          this.drainQueue("heartbeat-stall");
+          this.backend.send("show_notification", {
+            type: "warning",
+            message: "Wallet connection interrupted — reconnecting...",
+            timeout: 4000
+          });
+        }
+
+        // Level 2 — 8 consecutive failures: wallet-rpc has likely died unexpectedly
+        // (OS kill, AV quarantine, crash). Trigger a full restart.
+        if (n === 8 && !this.isRestarting) {
+          this.backend.sendLog("warn", "Wallet-rpc unresponsive — triggering auto-restart");
+          this.postTxRefresh();
+        }
       } else {
+        if (this.consecutiveHeartbeatFailures >= 3) {
+          this.backend.sendLog("info", "Wallet-rpc reconnected successfully");
+          this.backend.send("show_notification", {
+            type: "positive",
+            message: "Wallet reconnected",
+            timeout: 3000
+          });
+        }
         this.consecutiveHeartbeatFailures = 0;
       }
       let wallet = {
@@ -1442,17 +1515,22 @@ export class WalletRPC {
 
           balanceChanged = true;
 
-          // if balance has recently changed, get updated list of transactions and used addresses
-          let actions = [this.getTransactions(), this.getAddressList()];
-          actions.push(this.getAddressBook());
-          Promise.all(actions).then(data => {
-            for (let n of data) {
-              Object.keys(n).map(key => {
-                wallet[key] = Object.assign(wallet[key], n[key]);
-              });
-            }
-            this.sendGateway("set_wallet_data", wallet);
-          });
+          // Balance changed — fetch fresh TX/address data.
+          // Skip during sync: data is incomplete and these calls stall the queue.
+          if (!this.isRPCSyncing) {
+            Promise.all([
+              this.getTransactions(),
+              this.getAddressList(),
+              this.getAddressBook()
+            ]).then(data => {
+              for (let n of data) {
+                Object.keys(n).map(key => {
+                  wallet[key] = Object.assign(wallet[key], n[key]);
+                });
+              }
+              this.sendGateway("set_wallet_data", wallet);
+            });
+          }
         }
       }
 
@@ -1471,9 +1549,11 @@ export class WalletRPC {
         );
       }
 
-      // Poll transactions every ~30s even if balance hasn't changed
-      // This catches pending->confirmed transitions and new incoming TXs
-      if (!extended && !balanceChanged && this.heartbeatCount % 6 === 0) {
+      // Poll transactions every ~30s even if balance hasn't changed.
+      // This catches pending→confirmed transitions and new incoming TXs.
+      // Skip during sync — tx data is incomplete and the MEDIUM timeout could
+      // queue behind many other scan-related RPCs.
+      if (!extended && !balanceChanged && !this.isRPCSyncing && this.heartbeatCount % 6 === 0) {
         this.getTransactions().then(txData => {
           if (txData && txData.transactions) {
             this.sendGateway("set_wallet_data", txData);
@@ -1494,13 +1574,20 @@ export class WalletRPC {
             wallet.info.accrued_balance_next_payout = this.wallet_state.accrued_balance_next_payout;
           }
           // Send wallet data immediately so UI transitions (removes loading spinner).
-          // This is critical in offline mode where daemon is unreachable — the
-          // additional RPC calls below may hang indefinitely without a daemon.
+          // This is critical in offline mode where daemon is unreachable.
           this.sendGateway("set_wallet_data", wallet);
 
-          // Fetch transactions/addresses asynchronously with a timeout.
-          // If these fail or timeout, the wallet is still usable.
-          const extTimeout = 10000;
+          // Skip the heavy TX/address fetch during initial sync — the wallet is still
+          // scanning blocks, data is incomplete, and the RPCs will stall the queue.
+          // The syncPoller handles progress updates; we do a full fetch once sync is done.
+          if (this.isRPCSyncing) {
+            return;
+          }
+
+          // Fetch transactions/addresses asynchronously with a generous timeout.
+          // Each sub-RPC already has its own timeout (MEDIUM/FAST), so the outer
+          // race is a last-resort safety net — not the primary cancel mechanism.
+          const extTimeout = 20000;
           Promise.race([
             Promise.all([
               this.getTransactions(),
@@ -1520,10 +1607,7 @@ export class WalletRPC {
               this.sendGateway("set_wallet_data", wallet);
             })
             .catch(err => {
-              this.backend.sendLog(
-                "warn",
-                `Extended heartbeat skipped: ${err.message || err}`
-              );
+              this.backend.sendLog("warn", `Extended heartbeat skipped: ${err.message || err}`);
             });
         } else {
           this.closeWallet().then(() => {
@@ -1634,7 +1718,7 @@ export class WalletRPC {
         include_expired: false
       };
 
-      let data = await this.sendRPC("ons_known_names", params);
+      let data = await this.sendRPC("ons_known_names", params, this.T.MEDIUM);
 
       if (data.result && data.result.known_names) {
         return data.result.known_names;
@@ -1705,7 +1789,14 @@ export class WalletRPC {
 
           this.purchasedNames[name.trim()] = type;
 
-          setTimeout(() => this.updateLocalONSRecords(), 5000);
+          // Guard: only queue the ONS refresh if the wallet is still open and
+          // wallet-rpc is not mid-restart. If postTxRefresh fired at the same
+          // time, the onsHeartbeat interval will pick this up on its next cycle.
+          setTimeout(() => {
+            if (this.wallet_state.open && !this.isRestarting) {
+              this.updateLocalONSRecords();
+            }
+          }, 5000);
 
           this.sendGateway("set_ons_status", {
             code: 0,
@@ -2325,33 +2416,12 @@ export class WalletRPC {
       // no more pending txs, clear it out.
       this.pending_tx = null;
 
-      // Save wallet immediately to persist tx_key for proof generation,
-      // then schedule process restart. The internal_error fires ~9s after relay_tx
-      // and deadlocks wallet-rpc, so we kill and restart the process.
-      console.log(
-        "[WalletRPC] TX sent successfully - saving wallet then scheduling restart"
-      );
-      this.backend.sendLog(
-        "info",
-        "Transaction sent successfully — scheduling wallet recovery"
-      );
-      this.saveWallet()
-        .then(() => {
-          console.log(
-            "[WalletRPC] Wallet saved to disk, scheduling process restart in 5s"
-          );
-          setTimeout(() => {
-            this.postTxRefresh();
-          }, 5000);
-        })
-        .catch(() => {
-          console.log(
-            "[WalletRPC] Wallet save failed, scheduling process restart immediately"
-          );
-          setTimeout(() => {
-            this.postTxRefresh();
-          }, 2000);
-        });
+      // Trigger post-TX recovery. postTxRefresh handles saveWallet internally
+      // (after draining the queue so store runs first), then probes wallet-rpc
+      // and only restarts if it's actually deadlocked.
+      console.log("[WalletRPC] TX sent — triggering post-TX recovery");
+      this.backend.sendLog("info", "Transaction sent successfully — starting recovery");
+      this.postTxRefresh();
 
       return;
     }
@@ -2536,7 +2606,14 @@ export class WalletRPC {
           this.purchasedNames[name.trim()] = type;
 
           // Fetch new records and then get the decrypted record for the one we just inserted
-          setTimeout(() => this.updateLocalONSRecords(), 5000);
+          // Guard: only queue the ONS refresh if the wallet is still open and
+          // wallet-rpc is not mid-restart. If postTxRefresh fired at the same
+          // time, the onsHeartbeat interval will pick this up on its next cycle.
+          setTimeout(() => {
+            if (this.wallet_state.open && !this.isRestarting) {
+              this.updateLocalONSRecords();
+            }
+          }, 5000);
 
           this.sendGateway("set_ons_status", {
             code: 0,
@@ -2608,7 +2685,14 @@ export class WalletRPC {
           this.purchasedNames[name.trim()] = type;
 
           // Fetch new records and then get the decrypted record for the one we just inserted
-          setTimeout(() => this.updateLocalONSRecords(), 5000);
+          // Guard: only queue the ONS refresh if the wallet is still open and
+          // wallet-rpc is not mid-restart. If postTxRefresh fired at the same
+          // time, the onsHeartbeat interval will pick this up on its next cycle.
+          setTimeout(() => {
+            if (this.wallet_state.open && !this.isRestarting) {
+              this.updateLocalONSRecords();
+            }
+          }, 5000);
 
           // Optimistically update our record
           const { onsRecords } = this.wallet_state;
@@ -2872,137 +2956,168 @@ export class WalletRPC {
 
   async refreshWallet(source = "manual") {
     const label = source === "auto-sync" ? "Auto-refresh" : "Manual refresh";
-    console.log(`[WalletRPC] ${label}: restarting wallet-rpc process`);
-    this.backend.sendLog("info", `${label}: restarting wallet connection`);
+    this.backend.sendLog("info", `${label}: checking wallet-rpc health`);
 
-    this.sendGateway("set_wallet_data", {
-      status: {
-        code: 0,
-        message: "Refreshing wallet connection..."
-      }
-    });
+    // Probe first — if wallet-rpc is alive, just drain the queue and let the
+    // heartbeat recover naturally. Only do a full kill/restart if it's actually
+    // unresponsive. This prevents the manual refresh button from always nuking
+    // a healthy process.
+    const probe = await this.sendRPC("getheight", {}, this.T.FAST);
+    // -99 = stale discard (queue was drained mid-flight) — wallet-rpc is alive
+    // -1  = cannot connect — wallet-rpc is dead or unresponsive
+    const alive = !probe.hasOwnProperty("error") || probe.error?.code === -99;
 
-    await this.postTxRefresh();
-  }
-
-  // Automatic recovery after sending a TX.
-  // wallet-rpc's internal refresh thread crashes with wallet_internal_error after
-  // relay_tx, deadlocking its internal mutex. ALL RPCs hang after this.
-  // The ONLY fix is to kill and restart the wallet-rpc process entirely.
-  async postTxRefresh() {
-    const walletName = this.wallet_state.name;
-    const walletPassword = this.wallet_state.password;
-
-    if (
-      !walletName ||
-      walletPassword == null ||
-      !this.rpcPath ||
-      !this.rpcArgs
-    ) {
-      console.log(
-        "[WalletRPC] postTxRefresh: missing credentials or startup info, cannot recover"
-      );
+    if (alive) {
+      this.backend.sendLog("info", `${label}: wallet-rpc alive — draining queue and refreshing`);
+      this.drainQueue("manual-refresh");
+      this.sendGateway("set_wallet_data", {
+        status: { code: 0, message: "Refreshing..." }
+      });
       return;
     }
 
-    console.log(
-      "[WalletRPC] postTxRefresh: killing and restarting wallet-rpc process"
-    );
+    this.backend.sendLog("info", `${label}: wallet-rpc unresponsive — restarting`);
+    this.sendGateway("set_wallet_data", {
+      status: { code: 0, message: "Refreshing wallet connection..." }
+    });
+    await this.postTxRefresh();
+  }
 
-    // Stop all heartbeats and abandon the stuck RPC queue
-    this.isRestarting = true;
+  // Recovery after sending a TX (or when wallet-rpc dies unexpectedly).
+  //
+  // wallet-rpc's internal refresh thread deadlocks after relay_tx (~9s later),
+  // making ALL subsequent RPCs hang. The fix is to kill and restart the process.
+  //
+  // Flow:
+  //   1. drainQueue — immediately unblock the queue backlog
+  //   2. saveWallet (timed) — persist wallet state including tx_key
+  //   3. Probe wallet-rpc — if it's still alive, skip the kill/restart
+  //   4. Kill, wait for port (with 15s max), restart
+  //   5. Poll get_languages until responsive (with per-call timeout)
+  //   6. open_wallet — reopen at saved height
+  //   7. startHeartbeat — wallet-rpc auto-syncs; heartbeat tracks progress
+  //
+  // We do NOT call refresh() explicitly — it would block the queue for up to
+  // 60s. wallet-rpc's background thread handles it; heartbeat shows progress.
+  // We do NOT reset balance to null — preserving last known values means the
+  // first heartbeat won't trigger a full getTransactions/getAddressList reload.
+  async postTxRefresh() {
+    if (this.isRestarting) {
+      console.log("[WalletRPC] postTxRefresh: already restarting, skipping");
+      return;
+    }
+
+    const walletName = this.wallet_state.name;
+    const walletPassword = this.wallet_state.password;
+
+    if (!walletName || walletPassword == null || !this.rpcPath || !this.rpcArgs) {
+      console.log("[WalletRPC] postTxRefresh: missing credentials, cannot recover");
+      return;
+    }
+
+    // Snapshot rpcArgs now — node switching could update this.rpcArgs mid-flight
+    const rpcArgs = this.rpcArgs.slice();
+    const rpcPath = this.rpcPath;
+
+    // Step 1: Drain the queue immediately. This unblocks any calls stuck behind
+    // a deadlocked wallet-rpc, and ensures saveWallet runs first in the new queue.
+    this.drainQueue("post-tx-recovery");
     clearInterval(this.heartbeat);
     clearInterval(this.onsHeartbeat);
     this.stopSyncPoller();
-    this.queue = new queue(1, Infinity);
+    this.isRestarting = true;
+    this.consecutiveHeartbeatFailures = 0;
 
     this.sendGateway("set_wallet_data", {
-      status: {
-        code: 0,
-        message: "Syncing wallet after transaction..."
-      }
+      status: { code: 0, message: "Transaction sent! Updating..." }
     });
 
-    // Kill the stuck wallet-rpc process
+    // Step 2: Save wallet state. STORE timeout means a deadlocked wallet-rpc
+    // won't hang us forever — the .then()/.catch() will still fire.
+    console.log("[WalletRPC] postTxRefresh: saving wallet");
+    try {
+      await this.saveWallet();
+      console.log("[WalletRPC] postTxRefresh: wallet saved");
+      this.backend.sendLog("info", "Wallet saved after transaction");
+    } catch (e) {
+      console.log("[WalletRPC] postTxRefresh: saveWallet timed out or failed, continuing");
+    }
+
+    // Step 3: Probe wallet-rpc. The deadlock fires ~9s after relay_tx, so
+    // on fast connections it may not have hit yet. If the probe succeeds we
+    // can skip the kill/restart entirely — much faster recovery path.
+    const probe = await this.sendRPC("getheight", {}, this.T.FAST);
+    // -99 = stale discard — wallet-rpc is alive (queue was drained mid-flight)
+    // -1  = cannot connect / timeout — deadlocked or dead
+    const deadlocked = probe.hasOwnProperty("error") && probe.error?.code !== -99;
+
+    if (!deadlocked) {
+      console.log("[WalletRPC] postTxRefresh: wallet-rpc alive — no restart needed");
+      this.backend.sendLog("info", "Post-TX: wallet-rpc responsive, skipping restart");
+      this.isRestarting = false;
+      this.startHeartbeat();
+      return;
+    }
+
+    console.log("[WalletRPC] postTxRefresh: wallet-rpc deadlocked — restarting process");
+    this.backend.sendLog("warn", "Wallet-rpc deadlocked after TX — restarting");
+
+    // Step 4: Kill the stuck process
     if (this.walletRPCProcess) {
       try {
-        // Remove all listeners to prevent the old close handler from interfering
         this.walletRPCProcess.removeAllListeners();
         this.walletRPCProcess.stdout.removeAllListeners();
-        this.walletRPCProcess.stderr &&
-          this.walletRPCProcess.stderr.removeAllListeners();
+        if (this.walletRPCProcess.stderr) this.walletRPCProcess.stderr.removeAllListeners();
         this.walletRPCProcess.kill("SIGKILL");
         this.walletRPCProcess = null;
-        console.log("[WalletRPC] postTxRefresh: killed wallet-rpc process");
-        this.backend.sendLog(
-          "warn",
-          "Wallet-rpc process stopped — preparing for restart"
-        );
       } catch (e) {
-        console.error(
-          "[WalletRPC] postTxRefresh: error killing process:",
-          e.message
-        );
-        this.backend.sendLog(
-          "error",
-          `postTxRefresh: error killing process: ${e.message}`
-        );
+        this.backend.sendLog("error", `postTxRefresh: kill error: ${e.message}`);
       }
     }
 
-    // Wait for the process to fully exit and the port to free up
+    // Wait for port to free. Hard 15s maximum — Windows AV can hold file handles
+    // for several seconds after SIGKILL. After 15s we proceed anyway.
     await new Promise(resolve => {
+      const deadline = Date.now() + 15000;
       const checkPort = () => {
         portscanner
           .checkPortStatus(this.port, this.hostname)
           .catch(() => "closed")
           .then(status => {
-            if (status === "closed") {
+            if (status === "closed" || Date.now() >= deadline) {
+              if (Date.now() >= deadline) {
+                this.backend.sendLog("warn", "postTxRefresh: port still held after 15s — proceeding anyway");
+              }
               resolve();
             } else {
               setTimeout(checkPort, 500);
             }
           });
       };
-      // Give it a moment to die first
-      setTimeout(checkPort, 1500);
+      setTimeout(checkPort, 1000);
     });
-
-    console.log(
-      "[WalletRPC] postTxRefresh: port is free, starting new wallet-rpc process"
-    );
 
     // Destroy old HTTP agent and create a fresh one
     if (this.agent) this.agent.destroy();
     this.agent = new http.Agent({ keepAlive: true, maxSockets: 1 });
 
-    // Start a fresh wallet-rpc process with the same args
+    // Step 5: Start fresh wallet-rpc process
     try {
-      const spawnOptions =
-        process.platform === "win32" ? {} : { detached: true };
-      this.walletRPCProcess = child_process.spawn(
-        this.rpcPath,
-        this.rpcArgs,
-        spawnOptions
-      );
+      const spawnOptions = process.platform === "win32" ? {} : { detached: true };
+      this.walletRPCProcess = child_process.spawn(rpcPath, rpcArgs, spawnOptions);
 
       this.walletRPCProcess.stdout.on("data", data => {
         process.stdout.write(`Wallet: ${data}`);
         let lines = data.toString().split("\n");
-        let match,
-          height = null;
+        let match, height = null;
         let isRPCSyncing = false;
         for (const line of lines) {
           const trimmed = line.trim();
           if (trimmed.length === 0) continue;
 
-          // Forward important wallet-rpc output to troubleshooting logs
-          const levelMatch = trimmed.match(
-            /^\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2}\.\d+\s+([EWID])\s+/
-          );
+          const levelMatch = trimmed.match(/^\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2}\.\d+\s+([EWID])\s+/);
           if (levelMatch) {
             const lvl = levelMatch[1];
-            // Only log errors and warnings, skip routine INFO messages
             if (lvl === "E") {
               this.backend.sendLog("error", `[wallet-rpc] ${trimmed}`);
             } else if (lvl === "W") {
@@ -3013,7 +3128,6 @@ export class WalletRPC {
               trimmed.includes("Spent money") ||
               (trimmed.includes("balance") && !trimmed.includes("Calling RPC method"))
             )) {
-              // Only log important INFO messages, exclude RPC call spam
               this.backend.sendLog("info", `[wallet-rpc] ${trimmed}`);
             }
           } else if (
@@ -3024,9 +3138,8 @@ export class WalletRPC {
             trimmed.includes("wallet RPC server") ||
             trimmed.includes("Loaded wallet")
           ) {
-            const isErr = trimmed.includes("THROW EXCEPTION");
             this.backend.sendLog(
-              isErr ? "error" : "info",
+              trimmed.includes("THROW EXCEPTION") ? "error" : "info",
               `[wallet-rpc] ${trimmed}`
             );
           }
@@ -3048,92 +3161,89 @@ export class WalletRPC {
           this.sendGateway("set_wallet_data", { info: { height } });
         }
       });
+
       this.walletRPCProcess.on("error", err => {
         process.stderr.write(`Wallet: ${err}`);
         this.backend.sendLog("error", `[wallet-rpc] Process error: ${err}`);
       });
+
       this.walletRPCProcess.on("close", code => {
-        process.stderr.write(`Wallet: exited with code ${code} \n`);
+        process.stderr.write(`Wallet: exited with code ${code}\n`);
         let exitMsg = `[wallet-rpc] Process exited with code ${code}`;
         if (code !== null && (code > 255 || code < 0)) {
-          exitMsg += ` (Windows error code; hex 0x${(code >>> 0).toString(16).toUpperCase()})`;
+          exitMsg += ` (Windows hex: 0x${(code >>> 0).toString(16).toUpperCase()})`;
         }
         this.backend.sendLog("warn", exitMsg);
         this.walletRPCProcess = null;
         if (this.agent) this.agent.destroy();
       });
+
       if (this.walletRPCProcess.stderr) {
         this.walletRPCProcess.stderr.on("data", data => {
-          const lines = String(data).split("\n");
-          for (const line of lines) {
-            const trimmed = line.trim();
-            if (trimmed) this.backend.sendLog("error", `[wallet-rpc stderr] ${trimmed}`);
-          }
+          String(data).split("\n").forEach(line => {
+            const t = line.trim();
+            if (t) this.backend.sendLog("error", `[wallet-rpc stderr] ${t}`);
+          });
         });
       }
 
-      // Wait for wallet-rpc to be ready (responds to get_languages)
+      // Step 5b: Poll get_languages until wallet-rpc is responsive.
+      // Per-call FAST timeout prevents each probe from stacking up in the queue.
+      // Hard cap of 20 attempts (20s) — if it hasn't started by then, give up.
       await new Promise((resolve, reject) => {
         let attempts = 0;
         const intrvl = setInterval(() => {
           attempts++;
-          if (attempts > 30) {
+          if (attempts > 20) {
             clearInterval(intrvl);
-            reject(new Error("Timed out waiting for wallet-rpc to start"));
+            reject(new Error("Timed out waiting for wallet-rpc to start (20s)"));
             return;
           }
-          this.sendRPC("get_languages").then(data => {
+          this.sendRPC("get_languages", {}, this.T.FAST).then(data => {
+            // Stale generation discard — ignore, keep waiting
+            if (data.error?.code === -99) return;
+
             if (!data.hasOwnProperty("error")) {
+              // wallet-rpc responded cleanly
               clearInterval(intrvl);
               resolve();
+            } else if (data.error?.cause?.code === "ECONNREFUSED") {
+              // Not bound yet — keep waiting silently
+            } else if (data.error?.code === -1) {
+              // Connection refused / timeout — keep waiting (still starting)
             }
+            // Any other error keeps the interval running until max attempts
           });
         }, 1000);
       });
 
-      console.log("[WalletRPC] postTxRefresh: wallet-rpc process ready");
-      this.backend.sendLog("info", "Wallet-rpc restarted — reopening wallet");
+      this.backend.sendLog("info", "Wallet RPC restarted and responding");
 
-      // Open the wallet
+      // Step 6: Open wallet — it will start from its saved height.
+      // The background refresh thread in wallet-rpc handles syncing from there.
       const openResult = await this.sendRPC(
         "open_wallet",
-        {
-          filename: walletName,
-          password: walletPassword
-        },
-        30000
+        { filename: walletName, password: walletPassword },
+        this.T.OPEN
       );
 
       if (openResult.hasOwnProperty("error")) {
-        console.error(
-          "[WalletRPC] postTxRefresh: failed to open wallet:",
-          openResult.error
-        );
+        this.backend.sendLog("error", `postTxRefresh: open_wallet failed: ${JSON.stringify(openResult.error)}`);
       } else {
-        console.log(
-          "[WalletRPC] postTxRefresh: wallet opened, scanning blocks"
-        );
-        await this.sendRPC("refresh", {}, 120000);
-        console.log("[WalletRPC] postTxRefresh: block scan complete");
+        this.backend.sendLog("info", "Wallet reopened after TX recovery");
       }
+
     } catch (e) {
       console.error("[WalletRPC] postTxRefresh: restart failed:", e.message);
-      this.backend.sendLog(
-        "error",
-        `postTxRefresh restart failed: ${e.message}`
-      );
+      this.backend.sendLog("error", `postTxRefresh restart failed: ${e.message}`);
     }
 
-    // Reset balance tracking for fresh data
-    this.wallet_state.balance = null;
-    this.wallet_state.unlocked_balance = null;
-    this.wallet_state.accrued_balance = null;
-    this.wallet_state.accrued_balance_next_payout = null;
-
+    // Step 7: Resume. Do NOT reset balance — keeping last known values means
+    // the first heartbeat only fetches TX data if balance actually changed.
     this.isRestarting = false;
     this.startHeartbeat();
     console.log("[WalletRPC] postTxRefresh: recovery complete");
-    this.backend.sendLog("info", "Wallet connection refresh complete — ready");
+    this.backend.sendLog("info", "Post-TX recovery complete — wallet ready");
   }
 
   getPrivateKeys(password) {
@@ -3192,8 +3302,8 @@ export class WalletRPC {
   getAddressList() {
     return new Promise(resolve => {
       Promise.all([
-        this.sendRPC("get_address", { account_index: 0 }),
-        this.sendRPC("getbalance", { account_index: 0 })
+        this.sendRPC("get_address", { account_index: 0 }, this.T.FAST),
+        this.sendRPC("getbalance", { account_index: 0 }, this.T.MEDIUM)
       ]).then(data => {
         for (let n of data) {
           if (n.hasOwnProperty("error") || !n.hasOwnProperty("result")) {
@@ -3202,7 +3312,9 @@ export class WalletRPC {
           }
         }
 
-        let num_unused_addresses = 10;
+        // Keep a small buffer of unused addresses — 3 is enough for UX without
+        // firing a flood of create_address RPCs on every balance-change heartbeat.
+        const NUM_UNUSED_TARGET = 3;
 
         let wallet = {
           info: {
@@ -3212,7 +3324,6 @@ export class WalletRPC {
             accrued_balance: data[1].result.accrued_balance,
             accrued_balance_next_payout:
               data[1].result.accrued_balance_next_payout
-            // num_unspent_outputs: data[1].result.num_unspent_outputs
           },
           address_list: {
             primary: [],
@@ -3231,8 +3342,7 @@ export class WalletRPC {
               if (address_balance.address_index == address.address_index) {
                 address.balance = address_balance.balance;
                 address.unlocked_balance = address_balance.unlocked_balance;
-                address.num_unspent_outputs =
-                  address_balance.num_unspent_outputs;
+                address.num_unspent_outputs = address_balance.num_unspent_outputs;
                 break;
               }
             }
@@ -3247,23 +3357,19 @@ export class WalletRPC {
           }
         }
 
-        // limit to 10 unused addresses
-        wallet.address_list.unused = wallet.address_list.unused.slice(0, 10);
+        wallet.address_list.unused = wallet.address_list.unused.slice(0, NUM_UNUSED_TARGET);
 
-        if (wallet.address_list.unused.length < num_unused_addresses) {
-          for (
-            let n = wallet.address_list.unused.length;
-            n < num_unused_addresses;
-            n++
-          ) {
-            this.sendRPC("create_address", {
-              account_index: 0
-            }).then(data => {
-              wallet.address_list.unused.push(data.result);
-              if (wallet.address_list.unused.length == num_unused_addresses) {
-                // should sort them here
-                resolve(wallet);
-              }
+        // Don't eagerly create addresses during initial sync — wallet-rpc is busy
+        // scanning blocks and create_address RPCs without timeouts pile up in the queue.
+        const needsMore = wallet.address_list.unused.length < NUM_UNUSED_TARGET;
+        if (needsMore && !this.isRPCSyncing) {
+          const toCreate = NUM_UNUSED_TARGET - wallet.address_list.unused.length;
+          let created = 0;
+          for (let n = 0; n < toCreate; n++) {
+            this.sendRPC("create_address", { account_index: 0 }, this.T.FAST).then(d => {
+              if (d.result) wallet.address_list.unused.push(d.result);
+              created++;
+              if (created === toCreate) resolve(wallet);
             });
           }
         } else {
@@ -3281,7 +3387,7 @@ export class WalletRPC {
         pending: true,
         failed: true,
         pool: true
-      }).then(data => {
+      }, this.T.MEDIUM).then(data => {
         if (data.hasOwnProperty("error") || !data.hasOwnProperty("result")) {
           resolve({});
           return;
@@ -3323,7 +3429,7 @@ export class WalletRPC {
 
   getAddressBook() {
     return new Promise(resolve => {
-      this.sendRPC("get_address_book").then(data => {
+      this.sendRPC("get_address_book", {}, this.T.MEDIUM).then(data => {
         if (data.hasOwnProperty("error") || !data.hasOwnProperty("result")) {
           resolve({});
           return;
@@ -4023,7 +4129,10 @@ export class WalletRPC {
   }
 
   async saveWallet() {
-    await this.sendRPC("store");
+    // STORE timeout prevents an infinite hang if wallet-rpc is deadlocked.
+    // If this times out the .then()/.catch() callers still fire — the wallet
+    // file may be slightly stale but the restart flow will proceed.
+    await this.sendRPC("store", {}, this.T.STORE);
   }
 
   async closeWallet() {
@@ -4082,8 +4191,20 @@ export class WalletRPC {
     });
   }
 
+  // Abandon all queued RPC calls by bumping the queue generation and replacing
+  // the queue. Any in-flight responses from the previous generation are
+  // discarded when they resolve — they will not mutate wallet state.
+  drainQueue(reason = "queue drained") {
+    this.queueGeneration++;
+    this.queue = new queue(1, Infinity);
+    console.log(`[WalletRPC] drainQueue: ${reason} (gen ${this.queueGeneration})`);
+  }
+
   sendRPC(method, params = {}, timeout = 0) {
     let id = this.id++;
+    // Capture generation at enqueue time. If drainQueue() fires before the
+    // response arrives, the response is discarded as stale.
+    const capturedGen = this.queueGeneration;
     const url = `${this.protocol}${this.hostname}:${this.port}/json_rpc`;
     const body = {
       jsonrpc: "2.0",
@@ -4110,23 +4231,21 @@ export class WalletRPC {
       return fetch(url, fetchOptions)
         .then(res => res.json())
         .then(response => {
-          if (response.hasOwnProperty("error")) {
-            return {
-              method: method,
-              params: params,
-              error: response.error
-            };
+          if (this.queueGeneration !== capturedGen) {
+            return { method, params, error: { code: -99, message: "Stale response discarded" } };
           }
-          return {
-            method: method,
-            params: params,
-            result: response.result
-          };
+          if (response.hasOwnProperty("error")) {
+            return { method, params, error: response.error };
+          }
+          return { method, params, result: response.result };
         })
         .catch(error => {
+          if (this.queueGeneration !== capturedGen) {
+            return { method, params, error: { code: -99, message: "Stale response discarded" } };
+          }
           return {
-            method: method,
-            params: params,
+            method,
+            params,
             error: {
               code: -1,
               message: "Cannot connect to wallet-rpc",
