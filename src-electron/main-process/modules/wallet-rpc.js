@@ -71,6 +71,9 @@ export class WalletRPC {
     // Set true during finalizeNewWallet to prevent drainQueue from discarding
     // query_key responses before the mnemonic reaches the UI.
     this.isInitializing = false;
+    // Timestamp of last successful TX send. Used to suppress the "connection
+    // interrupted" notification during the normal post-TX recovery window.
+    this.lastTxSentTime = 0;
 
     // RPC timeout constants (ms). Every sendRPC call must use one of these —
     // no raw magic numbers, no zero (infinite) timeouts for any user-facing op.
@@ -1409,11 +1412,15 @@ export class WalletRPC {
         if (n === 3 && !this.isInitializing) {
           this.backend.sendLog("warn", "Heartbeat stalled — draining queue to clear backlog");
           this.drainQueue("heartbeat-stall");
-          this.backend.send("show_notification", {
-            type: "warning",
-            message: "Wallet connection interrupted — reconnecting...",
-            timeout: 4000
-          });
+          // Suppress the interruption notification for 30s after a TX send —
+          // the brief queue stall during relay is expected and not an error.
+          if (Date.now() - this.lastTxSentTime > 30000) {
+            this.backend.send("show_notification", {
+              type: "warning",
+              message: "Wallet connection interrupted — reconnecting...",
+              timeout: 4000
+            });
+          }
         }
 
         // Level 2 — 8 consecutive failures: wallet-rpc has likely died unexpectedly
@@ -1425,11 +1432,13 @@ export class WalletRPC {
       } else {
         if (this.consecutiveHeartbeatFailures >= 3) {
           this.backend.sendLog("info", "Wallet-rpc reconnected successfully");
-          this.backend.send("show_notification", {
-            type: "positive",
-            message: "Wallet reconnected",
-            timeout: 3000
-          });
+          if (Date.now() - this.lastTxSentTime > 30000) {
+            this.backend.send("show_notification", {
+              type: "positive",
+              message: "Wallet reconnected",
+              timeout: 3000
+            });
+          }
         }
         this.consecutiveHeartbeatFailures = 0;
       }
@@ -1523,12 +1532,19 @@ export class WalletRPC {
               this.getAddressList(),
               this.getAddressBook()
             ]).then(data => {
+              const payload = {};
               for (let n of data) {
-                Object.keys(n).map(key => {
-                  wallet[key] = Object.assign(wallet[key], n[key]);
+                Object.keys(n).forEach(key => {
+                  // Never overwrite tx_list with an empty array — if the fetch
+                  // fails or returns nothing during post-TX recovery, keep the
+                  // existing transaction history visible in the UI.
+                  if (key === "transactions" && !(n[key]?.tx_list?.length > 0)) return;
+                  payload[key] = n[key];
                 });
               }
-              this.sendGateway("set_wallet_data", wallet);
+              if (Object.keys(payload).length > 0) {
+                this.sendGateway("set_wallet_data", payload);
+              }
             });
           }
         }
@@ -1600,7 +1616,8 @@ export class WalletRPC {
           ])
             .then(extData => {
               for (let n of extData) {
-                Object.keys(n).map(key => {
+                Object.keys(n).forEach(key => {
+                  if (key === "transactions" && !(n[key]?.tx_list?.length > 0)) return;
                   wallet[key] = Object.assign(wallet[key] || {}, n[key]);
                 });
               }
@@ -2421,6 +2438,7 @@ export class WalletRPC {
       // and only restarts if it's actually deadlocked.
       console.log("[WalletRPC] TX sent — triggering post-TX recovery");
       this.backend.sendLog("info", "Transaction sent successfully — starting recovery");
+      this.lastTxSentTime = Date.now();
       this.postTxRefresh();
 
       return;
@@ -2919,17 +2937,19 @@ export class WalletRPC {
     this.lastSyncActivityTime = Date.now();
     let refreshComplete = false;
 
-    // Watchdog: if wallet-rpc stdout goes silent for 60 seconds while refresh
-    // is pending, it's deadlocked — fall back to full kill+restart
+    // Watchdog: if wallet-rpc stdout goes silent for 180 seconds while refresh
+    // is pending, it's deadlocked — fall back to full kill+restart.
+    // 180s instead of 60s: wallets with large TX history (service node rewards,
+    // exchanges) can take over a minute to reindex on refresh. 60s was too short.
     const watchdog = setInterval(() => {
       if (refreshComplete) {
         clearInterval(watchdog);
         return;
       }
-      if (Date.now() - this.lastSyncActivityTime > 60000) {
+      if (Date.now() - this.lastSyncActivityTime > 180000) {
         clearInterval(watchdog);
         refreshComplete = true;
-        this.backend.sendLog("warn", "Wallet-rpc silent for 60s — falling back to full restart");
+        this.backend.sendLog("warn", "Wallet-rpc silent for 180s — falling back to full restart");
         this.postTxRefresh();
       }
     }, 5000);
