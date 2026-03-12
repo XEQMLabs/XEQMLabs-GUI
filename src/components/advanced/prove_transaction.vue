@@ -145,30 +145,6 @@
         <p class="signature">
           {{ status.state.signature }}
         </p>
-        <div
-          class="swap-portal-link q-mt-md"
-          style="
-          padding: 12px;
-          background: rgba(0, 212, 255, 0.06);
-          border: 1px solid rgba(0, 212, 255, 0.2);
-          border-radius: 8px;
-          text-align: center;
-          font-size: 13px;
-          line-height: 1.6;
-        "
-        >
-          <div style="color: rgba(255,255,255,0.8); margin-bottom: 8px;">
-            Proof generated! Now go to the swap portal to submit your
-            Transaction ID and proof.
-          </div>
-          <a
-            href="#"
-            style="color: #00d4ff; text-decoration: underline; font-weight: 600;"
-            @click.prevent="openSwapPortal"
-          >
-            Open Swap Portal →
-          </a>
-        </div>
       </div>
     </div>
   </div>
@@ -353,11 +329,6 @@ export default {
         message: this.$t("notification.positive.signatureCopied")
       });
     },
-    openSwapPortal() {
-      this.$gateway.send("core", "open_url", {
-        url: "https://swap-testnet.xeqlabs.com/"
-      });
-    }
   }
 };
 </script>
