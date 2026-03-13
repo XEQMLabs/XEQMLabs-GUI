@@ -298,57 +298,33 @@ jobs:
           draft: false
           prerelease: false
           body: |
-            ## XEQ GUI v${{ steps.get_version.outputs.version }}
-
+            # XEQ GUI v${{ steps.get_version.outputs.version }}
             Official GUI wallet for Equilibria (XEQ)
 
-            ### Features
-
+            ## Features
             - Multi-network support: Switch between Legacy Mainnet, Mainnet (Offline), and Testnet
             - Legacy Mainnet: Connect to working remote nodes (us/eu/asia.equilibriacc.com)
             - Offline wallet creation: Generate wallets and addresses before mainnet launch
 
-            ### Networks
-
+            ## Networks
             - **Legacy Mainnet** — Live, original XEQ network with remote nodes
             - **Mainnet** — Offline, prepare wallets for new mainnet launch
             - **Testnet** — Local development and testing
 
-            ### Download & Installation
+            Please follow the Swap Guide for installation instructions:
+            https://equilibria-network.gitbook.io/docs/documentation/guides/xeq-legacy-swap-mainnet
 
-            **Windows**
-            - Download `XEQ-GUI-${{ steps.get_version.outputs.version }}-win.exe`
-            - Run the installer and follow the prompts
-            - Launch XEQ GUI from the file you saved it in
-
-            **Linux (AppImage)**
-            - Minimum: Ubuntu 24.04, Linux Mint 22, or another distro with glibc 2.38+ (released 2024).
-            - Ubuntu 22.04 / Linux Mint 21.x are not supported; use the Windows or macOS build or upgrade your OS.
-            - Download `XEQ-GUI-${{ steps.get_version.outputs.version }}-linux.AppImage`
-            - Install required dependencies: `sudo apt-get install -y libboost-all-dev libsodium23`
-            - Make executable and run:
-            ```
-            chmod +x XEQ-GUI-${{ steps.get_version.outputs.version }}-linux.AppImage
-            ./XEQ-GUI-${{ steps.get_version.outputs.version }}-linux.AppImage
-            ```
-            - Or go to properties and enable "Executable as Program"
-
-            **Mac**
-            - Advanced users only, still in active development.
-            - Use `xattr -cr app path` to bypass
-
-            ### Notes
-
+            ## Notes
             - Default network is Legacy Mainnet
             - Wallets are stored in the `wallets/` folder within the app directory (please see GUI for backup)
             - Config is stored in the `data/` folder within the app directory
 
-            > **Important — Back up your seed and wallet files**
-            >
-            > Back up your 25-word seed phrase and store it somewhere safe before installing, reinstalling, or changing install location. If you lose the seed, your funds cannot be recovered.
-            >
-            > Wallet files are stored in the app's install folder. Reinstalling or installing to a different folder can remove or overwrite that folder. We are not responsible for lost seeds, wallet files, or funds due to overwriting, reinstall, or user error.
-            >
-            > Use the in-app Wallet Backup path (in Network Settings) to see where wallet files are automatically copied; keep your own backup of that folder or your seed as well.
+            ## Important — Back up your seed and wallet files
+
+            Back up your 25-word seed phrase and store it somewhere safe before installing, reinstalling, or changing install location. If you lose the seed, your funds cannot be recovered.
+
+            Wallet files are stored in the app's install folder. Reinstalling or installing to a different folder can remove or overwrite that folder. We are not responsible for lost seeds, wallet files, or funds due to overwriting, reinstall, or user error.
+
+            Use the in-app Wallet Backup path (in Network Settings) to see where wallet files are automatically copied; keep your own backup of that folder or your seed as well.
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

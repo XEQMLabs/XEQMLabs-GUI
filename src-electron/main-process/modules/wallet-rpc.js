@@ -1412,9 +1412,17 @@ export class WalletRPC {
         if (n === 3 && !this.isInitializing) {
           this.backend.sendLog("warn", "Heartbeat stalled — draining queue to clear backlog");
           this.drainQueue("heartbeat-stall");
-          // Suppress the interruption notification for 30s after a TX send —
-          // the brief queue stall during relay is expected and not an error.
-          if (Date.now() - this.lastTxSentTime > 30000) {
+          // Suppress the interruption notification:
+          // 1. For 30s after a TX send — the brief queue stall during relay is expected.
+          // 2. During active sync — heartbeat failures here are caused by the wallet
+          //    mutex being held during heavy block scanning, not a real disconnection.
+          //    Showing "connection interrupted" during sync causes user confusion.
+          const activelySyncingForNotif =
+            this.isRPCSyncing ||
+            (this.lastSyncActivityTime &&
+              Date.now() - this.lastSyncActivityTime < 60000);
+
+          if (Date.now() - this.lastTxSentTime > 30000 && !activelySyncingForNotif) {
             this.backend.send("show_notification", {
               type: "warning",
               message: "Wallet connection interrupted — reconnecting...",
@@ -1425,9 +1433,27 @@ export class WalletRPC {
 
         // Level 2 — 8 consecutive failures: wallet-rpc has likely died unexpectedly
         // (OS kill, AV quarantine, crash). Trigger a full restart.
-        if (n === 8 && !this.isRestarting) {
+        //
+        // IMPORTANT: Do NOT restart while the wallet is actively scanning blocks.
+        // During heavy sync (large TX history), wallet-rpc holds the wallet mutex
+        // the entire time it processes transactions. Heartbeat RPCs queue up waiting
+        // for the mutex, hit their 5s timeout, and look like failures — but wallet-rpc
+        // is alive and working. Restarting here causes the infinite restart loop that
+        // large-wallet users experience (sync reaches 50-70% then resets to zero).
+        //
+        // isRPCSyncing: true while stdout is emitting block-processing lines
+        // lastSyncActivityTime: timestamp of last stdout sync activity
+        // 60s grace window covers brief stdout gaps during heavy TX processing
+        const activelySyncing =
+          this.isRPCSyncing ||
+          (this.lastSyncActivityTime &&
+            Date.now() - this.lastSyncActivityTime < 60000);
+
+        if (n === 8 && !this.isRestarting && !activelySyncing) {
           this.backend.sendLog("warn", "Wallet-rpc unresponsive — triggering auto-restart");
           this.postTxRefresh();
+        } else if (n === 8 && activelySyncing) {
+          this.backend.sendLog("info", "Wallet-rpc heartbeat failures during active sync — wallet is busy scanning, not restarting");
         }
       } else {
         if (this.consecutiveHeartbeatFailures >= 3) {
