@@ -6,14 +6,14 @@ GUI wallet for Equilibria (XEQ). Pre-configured with remote nodes, no config req
 
 ## Downloads
 
-Head to the [Releases](https://github.com/DomXEQ/New-XEQ-GUI/releases) page and grab the latest version.
+Head to the [Releases](https://github.com/DomXEQ/XEQ-GUI/releases) page and grab the latest version.
 
 ---
 
 ## Swap Resources
 
-- **Swap Portal:** [swap-testnet.xeqlabs.com](https://swap-testnet.xeqlabs.com/)
-- **Swap Guide:** [Equilibria Docs - XEQ Legacy Swap](https://equilibria-network.gitbook.io/docs/documentation/guides/xeq-legacy-swap-testnet)
+- **Swap Portal:** [swap.xeqlabs.com](https://swap.xeqlabs.com/)
+- **Swap Guide:** [Equilibria Docs - XEQ Legacy Swap](https://equilibria-network.gitbook.io/docs/documentation/guides/xeq-legacy-swap-mainnet)
 
 ---
 

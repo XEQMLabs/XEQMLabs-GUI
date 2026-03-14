@@ -32,27 +32,25 @@ Enhancement suggestions are tracked as GitHub issues. When creating an enhanceme
 
 ### Pull Requests
 
-1. **Fork the repository** and create your branch from `development` (not `master`)
+1. **Fork the repository** and create your branch from `main`
 2. **Make your changes** following our coding standards
 3. **Test your changes** thoroughly
 4. **Update documentation** if needed
 5. **Ensure your code follows the existing style** (run `npm run lint` and `npm run format`)
 6. **Write clear commit messages**
-7. **Submit a pull request** to the `development` branch
+7. **Submit a pull request** to the `main` branch
 
 #### Pull Request Process
 
 1. Update the README.md with details of changes if applicable
-2. Update the CHANGELOG.md with details of changes
-3. The PR will be reviewed by maintainers
-4. Once approved, it will be merged into the development branch
-5. After testing in development, changes will be merged to master for release
+2. The PR will be reviewed by maintainers
+3. Once approved, it will be merged into main and a new release will be tagged
 
 ## Development Setup
 
 ### Prerequisites
 
-- Node.js 14.11.0 (use `nvm use 14.11.0`)
+- Node.js 20.x (use `nvm use 20`)
 - npm 5.6.0 or higher
 - Git
 
@@ -61,8 +59,8 @@ Enhancement suggestions are tracked as GitHub issues. When creating an enhanceme
 1. Clone the repository:
 
 ```bash
-git clone https://github.com/DomXEQ/New-XEQ-GUI.git
-cd New-XEQ-GUI
+git clone https://github.com/DomXEQ/XEQ-GUI.git
+cd XEQ-GUI
 ```
 
 2. Install dependencies:

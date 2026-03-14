@@ -5,7 +5,7 @@
   "productName": "XEQ GUI",
   "repository": {
     "type": "git",
-    "url": "https://github.com/DomXEQ/New-XEQ-GUI.git"
+    "url": "https://github.com/DomXEQ/XEQ-GUI.git"
   },
   "cordovaId": "com.equilibria.xeq-wallet",
   "author": {
