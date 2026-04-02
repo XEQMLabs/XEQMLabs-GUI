@@ -390,12 +390,16 @@ export class WalletRPC {
                   }
                 }
 
-                // Keep track on wether a wallet is syncing or not
-                this.sendGateway("set_wallet_data", {
-                  isRPCSyncing
-                });
-                this.isRPCSyncing = isRPCSyncing;
-                if (isRPCSyncing) this.lastSyncActivityTime = Date.now();
+                // Keep track on whether a wallet is syncing or not.
+                // Only set isRPCSyncing to true from stdout — never flip it to false here.
+                // It gets cleared explicitly when syncPoller confirms we've reached chain tip.
+                // This prevents the flag from flickering off between stdout chunks, which
+                // was causing the heartbeat to misidentify active syncs as crashes.
+                if (isRPCSyncing) {
+                  this.sendGateway("set_wallet_data", { isRPCSyncing: true });
+                  this.isRPCSyncing = true;
+                  this.lastSyncActivityTime = Date.now();
+                }
 
                 if (height && Date.now() - this.last_height_send_time > 1000) {
                   this.last_height_send_time = Date.now();
@@ -1343,6 +1347,8 @@ export class WalletRPC {
 
         if (atChainTip || stableFallback) {
           this.syncCompleted = true;
+          this.isRPCSyncing = false;
+          this.sendGateway("set_wallet_data", { isRPCSyncing: false });
           this.stopSyncPoller();
           this.backend.sendLog("info", `Wallet caught up to block ${height}${daemonHeight ? ` (daemon tip: ${daemonHeight})` : ""}`);
 
@@ -1366,6 +1372,8 @@ export class WalletRPC {
       this.syncPoller = null;
     }
     this.syncPollerActive = false;
+    this.isRPCSyncing = false;
+    this.sendGateway("set_wallet_data", { isRPCSyncing: false });
   }
 
   heartbeatAction(extended = false) {
@@ -1417,10 +1425,12 @@ export class WalletRPC {
           // 2. During active sync — heartbeat failures here are caused by the wallet
           //    mutex being held during heavy block scanning, not a real disconnection.
           //    Showing "connection interrupted" during sync causes user confusion.
+          // 3. While daemon itself is still syncing — wallet-rpc failures are expected.
           const activelySyncingForNotif =
             this.isRPCSyncing ||
+            (this.backend.daemon?.local && this.backend.daemon?.isDaemonSyncing) ||
             (this.lastSyncActivityTime &&
-              Date.now() - this.lastSyncActivityTime < 60000);
+              Date.now() - this.lastSyncActivityTime < 120000);
 
           if (Date.now() - this.lastTxSentTime > 30000 && !activelySyncingForNotif) {
             this.backend.send("show_notification", {
@@ -1431,27 +1441,41 @@ export class WalletRPC {
           }
         }
 
-        // Level 2 — 8 consecutive failures: wallet-rpc has likely died unexpectedly
-        // (OS kill, AV quarantine, crash). Trigger a full restart.
+        // Level 2 — graduated response to sustained failures.
         //
-        // IMPORTANT: Do NOT restart while the wallet is actively scanning blocks.
-        // During heavy sync (large TX history), wallet-rpc holds the wallet mutex
-        // the entire time it processes transactions. Heartbeat RPCs queue up waiting
-        // for the mutex, hit their 5s timeout, and look like failures — but wallet-rpc
-        // is alive and working. Restarting here causes the infinite restart loop that
-        // large-wallet users experience (sync reaches 50-70% then resets to zero).
+        // IMPORTANT: Do NOT restart while the wallet or daemon is actively syncing.
+        // During heavy sync, wallet-rpc holds the wallet mutex the entire time it
+        // processes transactions. Heartbeat RPCs queue up waiting for the mutex,
+        // hit their 5s timeout, and look like failures — but wallet-rpc is alive.
+        // Similarly, if the daemon hasn't finished syncing, wallet-rpc will crash on
+        // missing TXs and restarting just re-encounters the same error in a loop.
         //
-        // isRPCSyncing: true while stdout is emitting block-processing lines
+        // isRPCSyncing: sticky flag, true once stdout emits block-processing lines,
+        //   cleared only when syncPoller confirms chain tip is reached
         // lastSyncActivityTime: timestamp of last stdout sync activity
-        // 60s grace window covers brief stdout gaps during heavy TX processing
+        // isDaemonSyncing: true while daemon target_height > height by >5 blocks
+        // 120s grace window covers gaps during heavy TX processing and daemon sync
+        const daemonStillSyncing =
+          this.backend.daemon?.local && this.backend.daemon?.isDaemonSyncing;
+
         const activelySyncing =
           this.isRPCSyncing ||
+          daemonStillSyncing ||
           (this.lastSyncActivityTime &&
-            Date.now() - this.lastSyncActivityTime < 60000);
+            Date.now() - this.lastSyncActivityTime < 120000);
 
-        if (n === 8 && !this.isRestarting && !activelySyncing) {
-          this.backend.sendLog("warn", "Wallet-rpc unresponsive — triggering auto-restart");
-          this.postTxRefresh();
+        if (n >= 8 && !this.isRestarting && !activelySyncing) {
+          if (n === 8) {
+            // First threshold: drain queue and warn, but don't restart yet.
+            // wallet-rpc may recover on its own once daemon catches up.
+            this.backend.sendLog("warn", "Wallet-rpc unresponsive — draining queue, waiting for recovery");
+            this.drainQueue("heartbeat-unresponsive");
+          } else if (n >= 36) {
+            // ~3 minutes of total failure (36 * 5s) with no sync activity.
+            // This is a genuine crash, not a sync-related stall.
+            this.backend.sendLog("warn", "Wallet-rpc unresponsive for 3+ minutes — triggering restart");
+            this.postTxRefresh();
+          }
         } else if (n === 8 && activelySyncing) {
           this.backend.sendLog("info", "Wallet-rpc heartbeat failures during active sync — wallet is busy scanning, not restarting");
         }
@@ -3199,9 +3223,11 @@ export class WalletRPC {
             }
           }
         }
-        this.sendGateway("set_wallet_data", { isRPCSyncing });
-        this.isRPCSyncing = isRPCSyncing;
-        if (isRPCSyncing) this.lastSyncActivityTime = Date.now();
+        if (isRPCSyncing) {
+          this.sendGateway("set_wallet_data", { isRPCSyncing: true });
+          this.isRPCSyncing = true;
+          this.lastSyncActivityTime = Date.now();
+        }
         if (height && Date.now() - this.last_height_send_time > 1000) {
           this.last_height_send_time = Date.now();
           this.sendGateway("set_wallet_data", { info: { height } });

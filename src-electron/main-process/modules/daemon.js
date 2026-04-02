@@ -605,6 +605,7 @@ export class Daemon {
         const target = daemon_info.info.target_height || h;
         // Share effective chain tip with wallet-rpc so it can detect true sync completion
         this.backend.daemonHeight = Math.max(h, target);
+        this.isDaemonSyncing = target > h && (target - h) > 5;
       }
 
       if (gotInfo && this.daemonHeartbeatCount % 6 === 1) {
