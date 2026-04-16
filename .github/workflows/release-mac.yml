@@ -98,13 +98,13 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           tag_name: mac-v${{ steps.get_version.outputs.version }}
-          name: XEQ GUI macOS v${{ steps.get_version.outputs.version }}
+          name: XEQM GUI macOS v${{ steps.get_version.outputs.version }}
           files: release/mac/*
           fail_on_unmatched_files: true
           generate_release_notes: false
           draft: false
           prerelease: false
           body: |
-            macOS (Apple Silicon) build of XEQ GUI v${{ steps.get_version.outputs.version }}.
+            macOS (Apple Silicon) build of XEQM GUI v${{ steps.get_version.outputs.version }}.
             - `.dmg` - Disk image installer
             - `.zip` - Zip archive

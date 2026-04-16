@@ -75,13 +75,14 @@ function createWindow() {
   let iconPath;
   try {
     if (process.env.PROD && __statics) {
-      iconPath = require("path").join(__statics, "icon.png");
+      const iconFile = process.platform === "win32" ? "icon.ico" : "icon.png";
+      iconPath = require("path").join(__statics, iconFile);
     } else {
       const iconDevPath = path.join(
         process.cwd(),
         "src-electron",
         "icons",
-        "icon.png"
+        process.platform === "win32" ? "icon.ico" : "icon.png"
       );
       if (fs.existsSync(iconDevPath)) {
         iconPath = iconDevPath;
@@ -198,7 +199,7 @@ function createWindow() {
           dialog
             .showMessageBox(mainWindow, {
               title: "Startup error",
-              message: `XEQ GUI is already open, or port ${config.port} is in use`,
+              message: `XEQM GUI is already open, or port ${config.port} is in use`,
               type: "error",
               buttons: ["ok"]
             })

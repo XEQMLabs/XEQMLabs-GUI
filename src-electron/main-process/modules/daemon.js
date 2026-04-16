@@ -12,7 +12,7 @@ export class Daemon {
     this.heartbeat = null;
     this.heartbeat_slow = null;
     this.id = 0;
-    this.net_type = "legacy";
+    this.net_type = "mainnet";
     this.local = false; // do we have a local daemon ?
 
     this.agent = new http.Agent({ keepAlive: true, maxSockets: 1 });
@@ -174,8 +174,7 @@ export class Daemon {
       const dirs = {
         mainnet: options.app.data_dir,
         stagenet: path.join(options.app.data_dir, "stagenet"),
-        testnet: path.join(options.app.data_dir, "testnet"),
-        legacy: path.join(options.app.data_dir, "legacy")
+        testnet: path.join(options.app.data_dir, "testnet")
       };
 
       // Use network-specific data directory
@@ -224,7 +223,7 @@ export class Daemon {
         args.push("--add-priority-node", "84.247.143.210:18080");
       }
 
-      // local_remote option removed for Legacy XEQ — New XEQ Mainnet only
+      // local_remote option removed — XEQM mainnet only
       // if (daemon.type === "local_remote" && net_type === "mainnet") {
       //   args.push(
       //     "--bootstrap-daemon-address",
@@ -285,7 +284,7 @@ export class Daemon {
                     lvl === "E" ? "error" : lvl === "W" ? "warn" : "info";
                   this.backend.sendLog(logLevel, `[daemon] ${trimmed}`);
                 } else if (
-                  trimmed.includes("Equilibria") ||
+                  trimmed.includes("XEQMLabs") ||
                   trimmed.includes("Error") ||
                   trimmed.includes("error") ||
                   trimmed.includes("THROW EXCEPTION") ||

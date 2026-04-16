@@ -9,27 +9,27 @@
         <table>
           <tr>
             <td>{{ $t("strings.ons.sessionID") }}:</td>
-            <td>7 XEQ</td>
+            <td>7 XEQM</td>
           </tr>
           <tr>
             <td>{{ $t("strings.ons.wallet") }}:</td>
-            <td>7 XEQ</td>
+            <td>7 XEQM</td>
           </tr>
           <tr>
             <td>{{ $t("strings.ons.lokinetName1Year") }}:</td>
-            <td>7 XEQ</td>
+            <td>7 XEQM</td>
           </tr>
           <tr>
             <td>{{ $t("strings.ons.lokinetNameXYears", { years: 2 }) }}:</td>
-            <td>14 XEQ</td>
+            <td>14 XEQM</td>
           </tr>
           <tr>
             <td>{{ $t("strings.ons.lokinetNameXYears", { years: 5 }) }}:</td>
-            <td>28 XEQ</td>
+            <td>28 XEQM</td>
           </tr>
           <tr>
             <td>{{ $t("strings.ons.lokinetNameXYears", { years: 10 }) }}:</td>
-            <td>42 XEQ</td>
+            <td>42 XEQM</td>
           </tr>
         </table>
       </div>

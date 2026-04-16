@@ -243,7 +243,7 @@ export default {
     copyViewKey: "View Key kopieren",
     createNewWallet: "Neue Wallet erstellen",
     deleteWallet: "Wallet löschen",
-    exit: "XEQ GUI Wallet schliessen",
+    exit: "XEQM GUI Wallet schliessen",
     importOldGUIWallet: "Wallets von alter GUI importieren",
     manageKeyImages: "Key Images verwalten",
     openWallet: "Wallet öffnen",

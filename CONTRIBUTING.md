@@ -1,128 +1,52 @@
-# Contributing to XEQ GUI Wallet
+# Contributing to XEQM GUI
 
-Thank you for your interest in contributing to the XEQ GUI Wallet! This document provides guidelines and instructions for contributing.
+Thanks for your interest in contributing. This guide covers the workflow and standards for the project.
 
-## Code of Conduct
+## Getting Started
 
-By participating in this project, you agree to abide by our [Code of Conduct](CODE_OF_CONDUCT.md).
+1. Fork the repository and create a branch from `main`
+2. Install dependencies: `npm install`
+3. Place daemon binaries in `bin/` (see [README](README.md))
+4. Run the dev server: `npm run dev`
 
-## How Can I Contribute?
+## Code Style
 
-### Reporting Bugs
+- ESLint and Prettier enforce formatting
+- Run `npm run ready` before submitting (runs both lint and format)
+- Follow the existing patterns in the codebase
+- No trailing whitespace, consistent indentation
 
-Before creating bug reports, please check the issue list as you might find out that you don't need to create one. When you are creating a bug report, please include as many details as possible:
+## Commit Messages
 
-- **Use a clear and descriptive title**
-- **Describe the exact steps to reproduce the problem**
-- **Provide specific examples to demonstrate the steps**
-- **Describe the behavior you observed after following the steps**
-- **Explain which behavior you expected to see instead and why**
-- **Include screenshots and animated GIFs if applicable**
-- **Include your system information** (OS, Node version, etc.)
-
-### Suggesting Enhancements
-
-Enhancement suggestions are tracked as GitHub issues. When creating an enhancement suggestion, please include:
-
-- **Use a clear and descriptive title**
-- **Provide a step-by-step description of the suggested enhancement**
-- **Provide specific examples to demonstrate the steps**
-- **Describe the current behavior and explain which behavior you expected to see instead**
-- **Explain why this enhancement would be useful**
-
-### Pull Requests
-
-1. **Fork the repository** and create your branch from `main`
-2. **Make your changes** following our coding standards
-3. **Test your changes** thoroughly
-4. **Update documentation** if needed
-5. **Ensure your code follows the existing style** (run `npm run lint` and `npm run format`)
-6. **Write clear commit messages**
-7. **Submit a pull request** to the `main` branch
-
-#### Pull Request Process
-
-1. Update the README.md with details of changes if applicable
-2. The PR will be reviewed by maintainers
-3. Once approved, it will be merged into main and a new release will be tagged
-
-## Development Setup
-
-### Prerequisites
-
-- Node.js 20.x (use `nvm use 20`)
-- npm 5.6.0 or higher
-- Git
-
-### Setup Instructions
-
-1. Clone the repository:
-
-```bash
-git clone https://github.com/DomXEQ/XEQ-GUI.git
-cd XEQ-GUI
-```
-
-2. Install dependencies:
-
-```bash
-npm install
-```
-
-3. Copy required binaries to the `bin/` directory (see README.md for details)
-
-4. Run the development server:
-
-```bash
-npm run dev
-```
-
-### Code Style
-
-- We use ESLint and Prettier for code formatting
-- Run `npm run lint` to check for linting errors
-- Run `npm run format` to format code
-- Run `npm run ready` to run both lint and format
-
-### Commit Messages
-
-- Use the present tense ("Add feature" not "Added feature")
-- Use the imperative mood ("Move cursor to..." not "Moves cursor to...")
-- Limit the first line to 72 characters or less
-- Reference issues and pull requests liberally after the first line
-
-Example:
+Use imperative mood, present tense. Keep the subject line under 72 characters.
 
 ```
 Add service node registration feature
 
-This commit adds the ability to register new service nodes directly
+Adds the ability to register new service nodes directly
 from the GUI wallet interface.
 
 Fixes #123
 ```
 
-## Adding Language Support
+## Pull Requests
 
-See the README.md for detailed instructions on adding new language support.
+1. One logical change per PR
+2. Test your changes manually (build and run the wallet)
+3. Update documentation if your change affects user-facing behavior
+4. Ensure `npm run ready` passes with no errors
+5. Target the `main` branch
 
-## Testing
+## Reporting Bugs
 
-Before submitting a pull request, please ensure:
+Open a GitHub issue with:
 
-- [ ] Code follows the existing style
-- [ ] All linting checks pass (`npm run lint`)
-- [ ] Code is properly formatted (`npm run format`)
-- [ ] Manual testing has been performed
-- [ ] No console errors or warnings
-- [ ] Documentation has been updated if needed
+- Steps to reproduce
+- Expected vs. actual behavior
+- OS and Node.js version
+- Screenshots if applicable
 
-## Questions?
+## Questions
 
-If you have questions about contributing, please:
-
-1. Check existing issues and pull requests
-2. Open a new issue with the `question` label
-3. Reach out via Telegram: [t.me/XEQCommunity](https://t.me/XEQCommunity)
-
-Thank you for contributing to XEQ GUI!
+- Open an issue with the `question` label
+- Telegram: [t.me/XEQCommunity](https://t.me/XEQCommunity)

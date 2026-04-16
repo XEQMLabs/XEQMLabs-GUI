@@ -51,7 +51,7 @@ export class Backend {
 
     this.appDir = appDir;
     // Safe backup location (survives reinstall): app data dir, same on Windows/Linux/macOS
-    this.walletsBackupDir = path.join(app.getPath("appData"), "XEQ-GUI", "wallets-backup");
+    this.walletsBackupDir = path.join(app.getPath("appData"), "XEQM-GUI", "wallets-backup");
     try {
       fs.ensureDirSync(this.walletsBackupDir);
     } catch (e) {
@@ -86,8 +86,8 @@ export class Backend {
     const daemons = {
       mainnet: {
         ...daemon,
-        type: "local",  // Mainnet is offline - use local mode for offline wallet creation
-        remote_host: "seed1.equilibria.network",
+        type: "local",
+        remote_host: "",
         remote_port: 9231
       },
       stagenet: {
@@ -98,19 +98,11 @@ export class Backend {
       },
       testnet: {
         ...daemon,
-        type: "local",  // No public remote nodes available - use local mode
+        type: "local",
         remote_host: "84.247.143.210",
         remote_port: 38157,
         p2p_bind_port: 38156,
         rpc_bind_port: 38157
-      },
-      legacy: {
-        ...daemon,
-        type: "remote",  // Legacy mainnet has working remote nodes
-        remote_host: "us.equilibriacc.com",
-        remote_port: 9231,
-        p2p_bind_port: 19230,
-        rpc_bind_port: 19231
       }
     };
 
@@ -123,7 +115,7 @@ export class Backend {
         data_dir: this.config_dir,
         wallet_data_dir: defaultWalletDir,
         ws_bind_port: 12313,
-        net_type: "legacy"
+        net_type: "mainnet"
       },
       wallet: {
         type: "local",
@@ -140,45 +132,11 @@ export class Backend {
       }
     };
 
-    // New XEQ mainnet seed nodes (mainnet currently offline)
-    this.remotes = [
-      {
-        host: "seed1.equilibria.network",
-        port: "9231"
-      },
-      {
-        host: "seed2.equilibria.network",
-        port: "9231"
-      },
-      {
-        host: "seed3.equilibria.network",
-        port: "9231"
-      },
-      {
-        host: "seed4.equilibria.network",
-        port: "9231"
-      },
-      {
-        host: "seed5.equilibria.network",
-        port: "9231"
-      }
-    ];
+    // XEQM mainnet remote nodes — none available yet
+    this.remotes = [];
 
-    // Legacy mainnet remote nodes (working nodes on original XEQ network)
-    this.legacyRemotes = [
-      {
-        host: "us.equilibriacc.com",
-        port: "9231"
-      },
-      {
-        host: "eu.equilibriacc.com",
-        port: "9231"
-      },
-      {
-        host: "asia.equilibriacc.com",
-        port: "9231"
-      }
-    ];
+    // Legacy remotes removed in v2.0 — new mainnet only
+    this.legacyRemotes = [];
 
     this.token = config.token;
 
@@ -361,11 +319,11 @@ export class Backend {
         break;
 
       case "open_explorer": {
-        // Block explorer not yet available for new XEQ network
+        // Block explorer not yet available for XEQM network
         // TODO: Update URLs when block explorer is deployed
         this.send("show_notification", {
           type: "warning",
-          message: "Block explorer not yet available for the new XEQ network.",
+          message: "Block explorer not yet available for the XEQM network.",
           timeout: 3000
         });
         break;
@@ -449,19 +407,19 @@ export class Backend {
         break;
     }
   }
-  // TODO: Update the GitHub releases URL below to the XEQ flagship wallet repo
+  // TODO: Update the GitHub releases URL below to the XEQM flagship wallet repo
   // once the release infrastructure is established.
-  // Example: "https://api.github.com/repos/EquilibriaCC/xeq-electron-wallet/releases/latest"
+  // Example: "https://api.github.com/repos/DomXEQ/XEQMLabs-GUI/releases/latest"
   async checkVersion() {
     this.send("set_update_required", false);
   }
 
   /**
-   * Fetch XEQ/USD spot price from CoinGecko and push it to the frontend.
+   * Fetch XEQM/USD spot price from CoinGecko and push it to the frontend.
    * Security: main-process only, HTTPS, hardcoded URL, strict validation,
    * 10s timeout. No wallet data is sent in the request.
    */
-  fetchXEQPrice() {
+  fetchXEQMPrice() {
     const PRICE_URL =
       "https://api.coingecko.com/api/v3/simple/price?ids=triton&vs_currencies=usd";
     fetch(PRICE_URL, {
@@ -484,11 +442,11 @@ export class Backend {
         ) {
           throw new Error("Unexpected price response");
         }
-        this.send("set_app_data", { xeq_price: price });
+        this.send("set_app_data", { xeqm_price: price });
       })
       .catch(() => {
         // Offline, timed out, or bad data — clear price silently
-        this.send("set_app_data", { xeq_price: null });
+        this.send("set_app_data", { xeqm_price: null });
       });
   }
 
@@ -653,7 +611,7 @@ export class Backend {
 
       console.log("[Backend] After validation, net_type:", this.config_data.app?.net_type);
 
-      // Migrate local_remote -> remote (option removed for Legacy XEQ)
+      // Migrate local_remote -> remote (legacy option removed)
       for (const net of ["mainnet", "stagenet", "testnet", "legacy"]) {
         if (
           this.config_data.daemons &&
@@ -817,9 +775,9 @@ export class Backend {
           });
 
           // Start price ticker — fetch immediately then every 2 minutes
-          this.fetchXEQPrice();
+          this.fetchXEQMPrice();
           this.priceInterval = setInterval(
-            () => this.fetchXEQPrice(),
+            () => this.fetchXEQMPrice(),
             2 * 60 * 1000
           );
 
@@ -838,7 +796,7 @@ export class Backend {
               type: "info",
               color: "cyan",
               textColor: "dark",
-              message: "Welcome to Equilibria! Please select a network and connect via remote or local node.",
+              message: "Welcome to XEQMLabs! Please select a network and connect via remote or local node.",
               timeout: 8000
             });
           }

@@ -1,12 +1,12 @@
 <template>
-  <span> {{ value }} XEQ </span>
+  <span> {{ value }} XEQM </span>
 </template>
 
 <script>
 import { mapState } from "vuex";
 
 export default {
-  name: "FormatXEQ",
+  name: "FormatXEQM",
   props: {
     amount: {
       type: Number,

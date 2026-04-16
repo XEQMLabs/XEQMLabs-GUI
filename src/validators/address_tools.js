@@ -1947,8 +1947,8 @@ return{_strlen:lb,_ge_mul8:Va,_keccak:db,_ge_scalarmult:Ta,_ge_fromfe_frombytes_
 
 var oxenConfig = {
     coinUnitPlaces: 12,
-    coinSymbol: 'XEQ',
-    coinName: 'Equilibria',
+    coinSymbol: 'XEQM',
+    coinName: 'XEQMLabs',
     coinUriPrefix: 'oxen:',
     addressPrefix: 114,
 };

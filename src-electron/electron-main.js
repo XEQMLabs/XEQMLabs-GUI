@@ -81,7 +81,7 @@ function createWindow() {
         process.cwd(),
         "src-electron",
         "icons",
-        "icon.png"
+        process.platform === "win32" ? "icon.ico" : "icon.png"
       );
       if (fs.existsSync(iconDevPath)) {
         iconPath = iconDevPath;
@@ -101,6 +101,7 @@ function createWindow() {
     ...(iconPath ? { icon: iconPath } : {}),
     title,
     backgroundColor: "#000000",
+    show: false,
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
@@ -116,6 +117,10 @@ function createWindow() {
             "electron-preload" + process.env.QUASAR_ELECTRON_PRELOAD_EXTENSION
           )
     }
+  });
+
+  mainWindow.once("ready-to-show", () => {
+    mainWindow.show();
   });
 
   mainWindow.on("close", e => {
@@ -202,7 +207,7 @@ function createWindow() {
           dialog
             .showMessageBox(mainWindow, {
               title: "Startup error",
-              message: `XEQ GUI is already open, or port ${config.port} is in use`,
+              message: `XEQM GUI is already open, or port ${config.port} is in use`,
               type: "error",
               buttons: ["ok"]
             })

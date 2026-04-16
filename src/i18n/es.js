@@ -242,7 +242,7 @@ export default {
     copyViewKey: "Copiar clave de visualización",
     createNewWallet: "Crear nuevo monedero",
     deleteWallet: "Eliminar monedero",
-    exit: "Cerrar la interfaz del monedero XEQ",
+    exit: "Cerrar la interfaz del monedero XEQM",
     importOldGUIWallet: "Importar monedero de una interfaz gráfica antigua",
     manageKeyImages: "Administrar Imágenes de Clave",
     openWallet: "Abrir monedero",

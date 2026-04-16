@@ -71,6 +71,7 @@
               $t("menuItems.rescanWallet")
             }}</q-item-label>
           </q-item>
+          <!-- Refresh RPC Connection hidden in v2.0 — sync fix makes it unnecessary
           <q-item
             v-close-popup
             clickable
@@ -81,6 +82,7 @@
               $t("menuItems.refreshConnection") || "Refresh RPC Connection"
             }}</q-item-label>
           </q-item>
+          -->
           <q-item
             clickable
             v-ripple

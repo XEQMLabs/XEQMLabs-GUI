@@ -6,7 +6,7 @@
       <div class="q-mt-md">Restarting...</div>
     </div>
 
-    <!-- Current Network Mode Banner (deferred so config is settled and list doesn't glitch) -->
+    <!-- Network Mode Banner with network switcher dropdown -->
     <q-banner
       v-if="showNetworkBanner"
       :class="networkBannerClass"
@@ -18,13 +18,7 @@
       <div class="row items-center justify-between">
         <div>
           <strong style="font-size: 13px;">{{ networkDisplayName }}</strong>
-          <div v-if="currentNetType === 'mainnet'" class="text-caption">
-            Mainnet is not yet live. Wallets work offline only.
-          </div>
-          <div v-else-if="currentNetType === 'legacy'" class="text-caption">
-            Original XEQ network with working remote nodes.
-          </div>
-          <div v-else-if="currentNetType === 'testnet'" class="text-caption">
+          <div v-if="currentNetType === 'testnet'" class="text-caption">
             Test network for development. Coins have no value.
           </div>
         </div>
@@ -120,8 +114,7 @@ export default {
       isRestarting: false,
       showNetworkBanner: false,
       networkOptions: [
-        { label: "Legacy Mainnet", value: "legacy", icon: "history", description: "Original XEQ network" },
-        { label: "Mainnet (Offline)", value: "mainnet", icon: "public", description: "New mainnet - not yet live" },
+        { label: "Mainnet", value: "mainnet", icon: "public", description: "XEQM mainnet" },
         { label: "Testnet", value: "testnet", icon: "science", description: "Test network" }
       ]
     };
@@ -133,7 +126,7 @@ export default {
       wallets: state => state.gateway.wallets,
       wallet_list: state => state.gateway.wallets.list,
       status: state => state.gateway.wallet.status,
-      currentNetType: state => state.gateway.app.config.app?.net_type || "legacy",
+      currentNetType: state => state.gateway.app.config.app?.net_type || "mainnet",
       hardware_wallets() {
         return this.wallet_list.filter(w => w.hardware_wallet);
       },
@@ -144,27 +137,20 @@ export default {
         if (this.currentNetType === "testnet") {
           return this.wallet_list.filter(w => w.net_type === "testnet");
         }
-        if (this.currentNetType === "legacy") {
-          return this.wallet_list.filter(w => w.net_type === "legacy");
-        }
         return this.wallet_list.filter(w => w.net_type === "mainnet" || !w.net_type);
       },
       networkBannerClass() {
         switch (this.currentNetType) {
           case "testnet":
             return "bg-warning text-dark";
-          case "legacy":
-            return "bg-purple text-white";
           default:
-            return "bg-positive text-dark";
+            return "bg-xeqm-blue text-white";
         }
       },
       networkIcon() {
         switch (this.currentNetType) {
           case "testnet":
             return "science";
-          case "legacy":
-            return "history";
           default:
             return "public";
         }
@@ -173,17 +159,12 @@ export default {
         switch (this.currentNetType) {
           case "testnet":
             return "Testnet";
-          case "legacy":
-            return "Legacy Mainnet";
           default:
-            return "Mainnet (Offline)";
+            return "Mainnet";
         }
       },
       actions() {
-        let createLabel = "Create New Wallet (Offline)";
-        if (this.currentNetType === "testnet" || this.currentNetType === "legacy") {
-          createLabel = "Create New Wallet";
-        }
+        let createLabel = "Create New Wallet";
         const actions = [
           {
             name: createLabel,
@@ -264,8 +245,6 @@ export default {
       switch (net) {
         case "testnet":
           return "Testnet";
-        case "legacy":
-          return "Legacy Mainnet";
         default:
           return "Mainnet";
       }
@@ -469,9 +448,6 @@ export default {
     }
   }
 
-  &.bg-purple {
-    background-color: #9c27b0 !important;
-  }
 }
 
 .wallet-list {
@@ -504,5 +480,9 @@ export default {
     border-radius: 3px;
   }
 
+}
+
+.bg-xeqm-blue {
+  background-color: #129fca !important;
 }
 </style>

@@ -16,10 +16,10 @@
           />
         </template>
         <q-toolbar-title
-          v-if="page_title == 'Equilibria'"
+          v-if="page_title == 'XEQMLabs'"
           class="flex items-center justify-center"
         >
-          <img src="Equilibria.svg" height="32" />
+          <img src="XEQMLabs.svg" height="32" />
         </q-toolbar-title>
         <q-toolbar-title v-else class="flex items-center justify-center">{{
           page_title
@@ -70,7 +70,7 @@ export default {
 
         default:
         case "wallet-select":
-          return "Equilibria";
+          return "XEQMLabs";
       }
     }
   },

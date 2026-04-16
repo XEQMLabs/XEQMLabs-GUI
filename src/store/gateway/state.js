@@ -14,11 +14,10 @@ export default {
     daemon_connected: false,
     daemon_connecting: false,
     open_settings_requested: false,
-    xeq_price: null
+    xeqm_price: null
   },
   wallets: {
     list: [],
-    legacy: [],
 
     // List of wallets that are in a sub folder (format of the old GUI)
     directories: []

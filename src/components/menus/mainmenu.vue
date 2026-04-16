@@ -28,23 +28,14 @@
     <SettingsModal ref="settingsModal" />
     <q-dialog ref="aboutModal" minimized>
       <div class="about-modal">
-        <img class="q-mb-md" src="Equilibria.svg" height="42" />
+        <img class="q-mb-md" src="XEQMLabs.svg" height="42" />
 
         <p class="q-my-sm">Wallet Version: v{{ version }}</p>
         <p class="q-my-sm">Daemon Version: v{{ daemonVersion }}</p>
-        <p class="q-my-sm">Copyright (c) 2026, Equilibria</p>
+        <p class="q-my-sm">Copyright (c) 2026, XEQMLabs</p>
         <p class="q-my-sm">All rights reserved.</p>
 
         <div class="q-mt-md q-mb-lg external-links">
-          <p>
-            <a
-              href="#"
-              @click="
-                openExternal('https://equilibria-network.gitbook.io/docs')
-              "
-              >https://equilibria-network.gitbook.io/docs</a
-            >
-          </p>
           <p>
             <a href="#" @click="openExternal('https://t.me/XEQCommunity')"
               >Telegram</a
@@ -52,7 +43,7 @@
             -
             <a
               href="#"
-              @click="openExternal('https://github.com/EquilibriaHorizon')"
+              @click="openExternal('https://github.com/DomXEQ/XEQMLabs-GUI')"
               >Github</a
             >
           </p>

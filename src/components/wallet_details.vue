@@ -14,7 +14,7 @@
               color="accent"
               :options="[
                 {
-                  label: $t('strings.xeqBalance'),
+                  label: $t('strings.xeqmBalance'),
                   value: 'balance'
                 },
                 {
@@ -45,7 +45,7 @@
           </div>
           <div v-if="balancestakeselector != 'stake'" class="row unlocked">
             <span
-              >{{ $t("strings.xeqUnlockedShort") }}:
+              >{{ $t("strings.xeqmUnlockedShort") }}:
               <FormatOxen :amount="info.unlocked_balance"
             /></span>
             <span v-if="fundsLocked" class="lock-indicator">
@@ -55,7 +55,7 @@
           </div>
           <div v-if="balancestakeselector == 'stake'" class="row unlocked">
             <span v-if="info.accrued_balance > 0"
-              >{{ $t("strings.xeqAccumulatedRewards") }}:
+              >{{ $t("strings.xeqmAccumulatedRewards") }}:
               <FormatOxen :amount="info.accrued_balance" />•
               {{ $t("strings.nextPayout") }}:
               <FormatNextPayout
@@ -102,7 +102,7 @@ export default {
       info: state => state.gateway.wallet.info,
       daemon_height: state => state.gateway.daemon.info.height,
       tx_list: state => state.gateway.wallet.transactions.tx_list,
-      xeq_price: state => state.gateway.app.xeq_price,
+      xeqm_price: state => state.gateway.app.xeqm_price,
       net_type: state => state.gateway.app.config?.app?.net_type,
       is_wallet_open: state =>
         state.gateway.wallet.info && state.gateway.wallet.info.name
@@ -111,9 +111,9 @@ export default {
       return this.net_type === "legacy";
     },
     usdValue() {
-      if (this.xeq_price === null || this.xeq_price === undefined) return "≈ ---";
-      const xeq = (this.info?.balance || 0) / 1e4;
-      const usd = xeq * this.xeq_price;
+      if (this.xeqm_price === null || this.xeqm_price === undefined) return "≈ ---";
+      const xeqm = (this.info?.balance || 0) / 1e4;
+      const usd = xeqm * this.xeqm_price;
       return `≈ ${usd.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USD`;
     },
     fundsLocked() {

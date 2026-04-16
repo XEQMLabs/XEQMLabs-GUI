@@ -207,16 +207,16 @@ export default {
       const staked = node.total_contributed || 0;
       const stakingRequirement = node.staking_requirement || 0;
 
-      // Convert from atomic units to XEQ (legacy uses 1e4, mainnet uses 1e9)
-      const stakedXEQ = Math.round(staked / this.atomicDivisor);
-      const requiredXEQ = Math.round(stakingRequirement / this.atomicDivisor);
+      // Convert from atomic units to XEQM (legacy uses 1e4, mainnet uses 1e9)
+      const stakedXEQM = Math.round(staked / this.atomicDivisor);
+      const requiredXEQM = Math.round(stakingRequirement / this.atomicDivisor);
 
       // Return format: "staked/required" (e.g., "10/100" or "100/100")
       if (stakingRequirement === 0) {
-        return `${stakedXEQ}/?`;
+        return `${stakedXEQM}/?`;
       }
 
-      return `${stakedXEQ}/${requiredXEQ}`;
+      return `${stakedXEQM}/${requiredXEQM}`;
     }
   }
 };

@@ -20,19 +20,6 @@
     </div>
 
     <!-- Warning messages for network status -->
-    <div v-if="config.app.net_type === 'mainnet' && !daemon_connected" class="network-warning q-mb-md q-pa-md">
-      <q-icon name="warning" color="warning" size="sm" class="q-mr-sm" />
-      <span class="warning-text">
-        <strong>Mainnet is currently offline.</strong> You can create an offline wallet to generate your address and keys.
-        When mainnet launches, your wallet will be ready to use.
-      </span>
-    </div>
-    <div v-if="config.app.net_type === 'legacy' && !daemon_connected" class="network-warning q-mb-md q-pa-md">
-      <q-icon name="info" color="info" size="sm" class="q-mr-sm" />
-      <span class="warning-text">
-        <strong>Legacy Mainnet:</strong> Select a <strong>Remote Node</strong> below (recommended) or run your own local daemon, then click <strong>Connect</strong>.
-      </span>
-    </div>
     <div v-if="config.app.net_type === 'testnet' && !daemon_connected" class="network-warning q-mb-md q-pa-md">
       <q-icon name="info" color="info" size="sm" class="q-mr-sm" />
       <span class="warning-text">
@@ -60,7 +47,7 @@
             v-if="!daemon_connected"
             color="primary"
             :loading="daemon_connecting"
-            :disable="daemon_connecting || isMainnetOffline"
+            :disable="daemon_connecting"
             @click="connectDaemon"
           >
             <q-icon name="power" class="q-mr-sm" />
@@ -77,9 +64,6 @@
           </q-btn>
         </div>
       </div>
-      <p v-if="config.app.net_type === 'mainnet'" class="q-mt-sm q-mb-none text-grey-6" style="font-size: 12px;">
-        Connect is disabled for mainnet (network is offline). You can still create offline wallets.
-      </p>
     </div>
 
     <div class="row justify-between q-mb-md">
@@ -96,11 +80,11 @@
           v-model="selectedDaemonType"
           val="remote"
           :label="$t('strings.daemon.remote.title')"
-          :disable="config.app.net_type === 'testnet' || config.app.net_type === 'mainnet'"
+          :disable="config.app.net_type === 'testnet'"
           @update:model-value="onDaemonTypeChange"
         />
       </div>
-      <!-- Local + Remote commented out for Legacy XEQ — not needed, confuses users -->
+      <!-- Local + Remote commented out — not needed, confuses users -->
       <!-- <div>
         <q-radio
           v-model="config_daemon.type"
@@ -163,28 +147,7 @@
             borderless
             dense
           />
-          <!-- Remote node presets for legacy network -->
-          <q-btn-dropdown
-            v-if="config.app.net_type === 'legacy'"
-            class="remote-dropdown"
-            flat
-            label="Presets"
-          >
-            <q-list>
-              <q-item
-                v-for="option in legacyRemotes"
-                :key="option.host"
-                v-close-popup
-                clickable
-                @click="setPreset(option)"
-              >
-                <q-item-section>
-                  <q-item-label>{{ option.host }}:{{ option.port }}</q-item-label>
-                </q-item-section>
-              </q-item>
-            </q-list>
-          </q-btn-dropdown>
-          <!-- Remote node presets for mainnet (when available) -->
+          <!-- Remote node presets for mainnet -->
           <q-btn-dropdown
             v-if="config.app.net_type === 'mainnet' && remotes && remotes.length > 0"
             class="remote-dropdown"
@@ -553,8 +516,6 @@ export default {
       switch (this.config.app.net_type) {
         case "testnet":
           return "science";
-        case "legacy":
-          return "history";
         default:
           return "public";
       }
@@ -564,15 +525,9 @@ export default {
       switch (this.config.app.net_type) {
         case "testnet":
           return "Testnet";
-        case "legacy":
-          return "Legacy Mainnet";
         default:
-          return "Mainnet (Offline)";
+          return "Mainnet";
       }
-    },
-    isMainnetOffline() {
-      // Only new mainnet is offline; legacy and testnet can connect
-      return this.config.app && this.config.app.net_type === "mainnet";
     },
     blockchainDataDir() {
       if (!this.config.app || !this.config.app.data_dir) return "";
@@ -584,8 +539,6 @@ export default {
           return `${baseDir}/testnet`;
         case "stagenet":
           return `${baseDir}/stagenet`;
-        case "legacy":
-          return `${baseDir}/legacy`;
         default:
           return baseDir;
       }
@@ -597,28 +550,18 @@ export default {
   mounted() {
     if (!this.config.app || !this.config.daemons) return;
 
-    // Default to local node for mainnet/testnet since remote nodes are not available
-    // Legacy has working remote nodes, so default to remote for legacy
+    // Default to local node
     if (this.randomiseRemote) {
-      if (this.config.app.net_type === "legacy") {
-        this.config_daemon.type = "remote";
-      } else {
-        this.config_daemon.type = "local";
-      }
+      this.config_daemon.type = "local";
     }
 
-    // If someone had local_remote saved, fall back appropriately
+    // If someone had local_remote saved, fall back to local
     if (this.config_daemon.type === "local_remote") {
-      if (this.config.app.net_type === "legacy") {
-        this.config_daemon.type = "remote";
-      } else {
-        this.config_daemon.type = "local";
-      }
+      this.config_daemon.type = "local";
     }
 
-    // Force local for testnet and mainnet since no remote nodes are available
-    // Legacy can use remote nodes
-    if (this.config.app.net_type === "testnet" || this.config.app.net_type === "mainnet") {
+    // Force local for testnet since no remote nodes are available
+    if (this.config.app.net_type === "testnet") {
       this.config_daemon.type = "local";
     }
 
@@ -761,15 +704,6 @@ export default {
 
       .network-label {
         color: #FFA726;
-      }
-    }
-
-    &.legacy {
-      background: rgba(156, 39, 176, 0.15);
-      border: 1px solid rgba(156, 39, 176, 0.3);
-
-      .network-label {
-        color: #BA68C8;
       }
     }
 

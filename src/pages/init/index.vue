@@ -2,9 +2,9 @@
   <q-page>
     <div class="init-screen-page text-center">
       <div class="absolute-center">
-        <img src="Equilibria.svg" width="400" class="q-mb-md" />
+        <img src="XEQMLabs.svg" width="400" class="q-mb-sm" />
 
-        <div class="startup-icons q-mt-xl q-mb-lg">
+        <div class="startup-icons q-mt-md q-mb-lg">
           <div ref="backend">
             <svg
               width="64"

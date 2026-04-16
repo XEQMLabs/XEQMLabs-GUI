@@ -5,8 +5,8 @@
         {{ $t("strings.serviceNodeContributionDescription") }}
         <span
           style="cursor: pointer; text-decoration: underline;"
-          @click="oxenWebsite"
-          >Equilibria {{ $t("strings.website") }}.</span
+          @click="xeqmlabsWebsite"
+          >XEQMLabs {{ $t("strings.website") }}.</span
         >
       </p>
       <OxenField
@@ -290,8 +290,8 @@ export default {
     }
   },
   methods: {
-    oxenWebsite() {
-      const url = "https://equilibria-network.gitbook.io/docs";
+    xeqmlabsWebsite() {
+      const url = "https://github.com/DomXEQ/XEQMLabs-GUI";
       this.$gateway.send("core", "open_url", {
         url
       });

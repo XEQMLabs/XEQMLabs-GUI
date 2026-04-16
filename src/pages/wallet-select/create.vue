@@ -2,15 +2,7 @@
   <q-page class="create-wallet">
     <!-- Network indicator banner -->
     <q-banner
-      v-if="networkType === 'mainnet'"
-      class="bg-warning text-dark q-mb-sm"
-      icon="info"
-    >
-      <strong>Creating Mainnet Wallet (Offline)</strong><br />
-      Mainnet is not yet live. Your wallet will be ready when the network launches.
-    </q-banner>
-    <q-banner
-      v-else-if="networkType === 'testnet'"
+      v-if="networkType === 'testnet'"
       class="bg-primary text-white q-mb-sm"
       icon="science"
     >

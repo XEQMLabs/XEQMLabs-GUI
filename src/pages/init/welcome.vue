@@ -8,7 +8,7 @@
         class="first-step"
       >
         <div class="welcome-container">
-          <img src="Equilibria.svg" height="100" class="q-mb-md" />
+          <img src="XEQMLabs.svg" height="100" class="q-mb-md" />
           <div>Wallet Version: v{{ version }}</div>
           <div>Daemon Version: {{ daemonVersion }}</div>
           <LanguageSelect class="q-mt-lg" @select="onLanguageSelected" />
@@ -138,8 +138,6 @@ export default {
     },
     onLanguageSelected() {
       // Save default config (local node) and go directly to wallet-select
-      // This allows users to create offline wallets without configuring daemon first
-      // Mainnet is offline and testnet has no public remote nodes
       this.$gateway.send("core", "save_config_init", this.pending_config);
       this.$router.replace({ path: "/wallet-select" });
     }

@@ -1,16 +1,16 @@
 {
-  "name": "xeq-gui",
-  "version": "1.2.2",
-  "description": "GUI wallet for Equilibria (XEQ)",
-  "productName": "XEQ GUI",
+  "name": "xeqm-gui",
+  "version": "2.0.0",
+  "description": "GUI wallet for XEQMLabs (XEQM)",
+  "productName": "XEQM GUI",
   "repository": {
     "type": "git",
-    "url": "https://github.com/EquilibriaHorizon/XEQ-GUI.git"
+    "url": "https://github.com/DomXEQ/XEQMLabs-GUI.git"
   },
-  "cordovaId": "com.equilibria.xeq-wallet",
+  "cordovaId": "com.xeqmlabs.xeqm-wallet",
   "author": {
-    "name": "Equilibria",
-    "email": "contact@equilibria.cc"
+    "name": "XEQMLabs",
+    "email": "xeqnodestation@gmail.com"
   },
   "private": true,
   "scripts": {

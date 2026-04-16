@@ -122,10 +122,10 @@ export default configure(function () {
 
       builder: {
         npmRebuild: false,
-        appId: "com.equilibria.xeq-wallet",
-        productName: "XEQ GUI",
-        copyright: "Copyright © 2026 Equilibria",
-        artifactName: "XEQ-GUI-${version}-${os}.${ext}",
+        appId: "com.xeqmlabs.xeqm-wallet",
+        productName: "XEQM GUI",
+        copyright: "Copyright © 2026 XEQMLabs",
+        artifactName: "XEQM-GUI-${version}-${os}.${ext}",
 
         win: {
           target: [
@@ -135,7 +135,7 @@ export default configure(function () {
             }
           ],
           icon: "src-electron/icons/icon_512x512.png",
-          publisherName: "Equilibria"
+          publisherName: "XEQMLabs"
         },
 
         nsis: {
@@ -143,7 +143,7 @@ export default configure(function () {
           allowToChangeInstallationDirectory: true,
           createDesktopShortcut: true,
           createStartMenuShortcut: true,
-          shortcutName: "XEQ GUI"
+          shortcutName: "XEQM GUI"
         },
 
         linux: {

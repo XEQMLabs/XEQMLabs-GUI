@@ -15,7 +15,7 @@ export class WalletRPC {
     this.wallet_dir = null;
     this.auth = [];
     this.id = 0;
-    this.net_type = "legacy";
+    this.net_type = "mainnet";
     this.heartbeat = null;
     this.onsHeartbeat = null;
     this.syncPoller = null; // Fast poller for initial sync progress
@@ -294,7 +294,7 @@ export class WalletRPC {
           this.backend.sendLog("error", `wallet-rpc NOT FOUND at: ${rpcPath}`);
           reject(
             new Error(
-              "Failed to find Equilibria Wallet RPC. Please make sure your anti-virus has not removed it."
+              "Failed to find XEQM Wallet RPC. Please make sure your anti-virus has not removed it."
             )
           );
           return;
@@ -366,7 +366,7 @@ export class WalletRPC {
                       this.backend.sendLog("info", `[wallet-rpc] ${trimmed}`);
                     }
                   } else if (
-                    trimmed.includes("Equilibria") ||
+                    trimmed.includes("XEQMLabs") ||
                     trimmed.includes("THROW EXCEPTION") ||
                     trimmed.includes("Logging to") ||
                     trimmed.includes("Binding on") ||
@@ -1543,7 +1543,7 @@ export class WalletRPC {
           if (this.heartbeatCount <= 3 || rawBal !== this.wallet_state.balance) {
             this.backend.sendLog(
               "info",
-              `[getbalance RPC] raw balance: ${rawBal} (${(rawBal / this.getAtomicDivisor()).toFixed(4)} XEQ), unlocked: ${rawUnlocked} (${(rawUnlocked / this.getAtomicDivisor()).toFixed(4)} XEQ)`
+              `[getbalance RPC] raw balance: ${rawBal} (${(rawBal / this.getAtomicDivisor()).toFixed(4)} XEQM), unlocked: ${rawUnlocked} (${(rawUnlocked / this.getAtomicDivisor()).toFixed(4)} XEQM)`
             );
           }
 
@@ -1566,7 +1566,7 @@ export class WalletRPC {
             n.result.accrued_balance_next_payout;
 
           // Debug: log what we're sending to the gateway
-          console.log(`[WalletRPC] Sending balance to gateway: ${wallet.info.balance} (${(wallet.info.balance/1e9).toFixed(4)} XEQ)`);
+          console.log(`[WalletRPC] Sending balance to gateway: ${wallet.info.balance} (${(wallet.info.balance/1e9).toFixed(4)} XEQM)`);
 
           this.sendGateway("set_wallet_data", {
             info: wallet.info
@@ -1605,13 +1605,13 @@ export class WalletRPC {
         const unlocked = this.wallet_state.unlocked_balance;
         const divisor = this.getAtomicDivisor();
         // Convert from atomic units (legacy: 1e4, mainnet: 1e9)
-        const balXEQ = bal !== null ? (bal / divisor).toFixed(4) : "null";
-        const unlockedXEQ = unlocked !== null ? (unlocked / divisor).toFixed(4) : "null";
+        const balXEQM = bal !== null ? (bal / divisor).toFixed(4) : "null";
+        const unlockedXEQM = unlocked !== null ? (unlocked / divisor).toFixed(4) : "null";
         this.backend.sendLog(
           "info",
           `Wallet status — height: ${wallet.info.height}, syncing: ${
             this.isRPCSyncing ? "yes" : "no"
-          }, balance: ${balXEQ} XEQ, unlocked: ${unlockedXEQ} XEQ`
+          }, balance: ${balXEQM} XEQM, unlocked: ${unlockedXEQM} XEQM`
         );
       }
 
@@ -3201,7 +3201,7 @@ export class WalletRPC {
               this.backend.sendLog("info", `[wallet-rpc] ${trimmed}`);
             }
           } else if (
-            trimmed.includes("Equilibria") ||
+            trimmed.includes("XEQMLabs") ||
             trimmed.includes("THROW EXCEPTION") ||
             trimmed.includes("Logging to") ||
             trimmed.includes("Binding on") ||

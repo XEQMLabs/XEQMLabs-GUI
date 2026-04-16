@@ -83,8 +83,8 @@ async function showUpdateDialog(mainWindow) {
   const options = {
     type: "info",
     buttons: ["Restart Wallet", "Later"],
-    title: "XEQ GUI update available",
-    message: "There is a new version of XEQ GUI available.",
+    title: "XEQM GUI update available",
+    message: "There is a new version of XEQM GUI available.",
     detail: "Press Restart Wallet to apply the update",
     defaultId: 1,
     cancelId: RESTART_BUTTON
@@ -99,7 +99,7 @@ async function showCannotUpdateDialog(mainWindow) {
     buttons: ["Ok"],
     title: "Cannot update",
     message:
-      "XEQ GUI failed to update but there is a new version available. Please download the new version manually."
+      "XEQM GUI failed to update but there is a new version available. Please download the new version manually."
   };
   await dialog.showMessageBox(mainWindow, options);
 }

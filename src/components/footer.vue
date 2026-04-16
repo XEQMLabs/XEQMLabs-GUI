@@ -65,14 +65,12 @@ export default {
     daemon_connected: state => state.gateway.app.daemon_connected,
 
     netType() {
-      return this.config.app?.net_type || "legacy";
+      return this.config.app?.net_type || "mainnet";
     },
     networkDisplayName() {
       switch (this.netType) {
         case "testnet":
           return "Testnet";
-        case "legacy":
-          return "Legacy";
         default:
           return "Mainnet";
       }
@@ -207,10 +205,6 @@ export default {
       color: #FFA726;
     }
 
-    &.legacy {
-      background-color: rgba(156, 39, 176, 0.2);
-      color: #BA68C8;
-    }
   }
 
   .status-separator {

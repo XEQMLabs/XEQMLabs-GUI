@@ -4,7 +4,7 @@
       <MainMenu />
       <q-toolbar-title>
         <div class="flex items-center justify-center" style="margin:8px; margin-left:0">
-          <img src="Equilibria.svg" height="32" />
+          <img src="XEQMLabs.svg" height="32" />
         </div>
       </q-toolbar-title>
     </q-header>
@@ -15,7 +15,13 @@
       <div class="app-content">
         <div class="navigation row items-end">
           <router-link to="/wallet">
-            <q-btn class="single-icon" size="md" icon="swap_horiz" />
+            <q-btn
+              class="large-btn"
+              :label="$t('buttons.transactions')"
+              size="md"
+              icon-right="swap_horiz"
+              align="between"
+            />
           </router-link>
           <router-link to="/wallet/send">
             <q-btn
@@ -53,7 +59,7 @@
               align="between"
             />
           </router-link>
-          <!-- ONS (Equilibria Name Service) hidden - not applicable to XEQ
+          <!-- ONS (XEQMLabs Name Service) hidden - not applicable to XEQM
           <router-link to="/wallet/ons">
             <q-btn
               class="large-btn"

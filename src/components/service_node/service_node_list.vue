@@ -30,9 +30,9 @@
             </span>
             <span v-if="node.awaitingContribution" class="contrib-amounts">
               {{ $t("strings.serviceNodeDetails.minContribution") }}:
-              {{ getMinContribution(node, our_address) }} XEQ •
+              {{ getMinContribution(node, our_address) }} XEQM •
               {{ $t("strings.serviceNodeDetails.maxContribution") }}:
-              {{ openForContributionOxen(node, our_address) }} XEQ
+              {{ openForContributionOxen(node, our_address) }} XEQM
             </span>
           </q-item-label>
         </q-item-section>

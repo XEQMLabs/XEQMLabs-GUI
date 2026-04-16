@@ -298,24 +298,24 @@ jobs:
           draft: false
           prerelease: false
           body: |
-            # XEQ GUI v${{ steps.get_version.outputs.version }}
-            Official GUI wallet for Equilibria (XEQ)
+            # XEQM GUI v${{ steps.get_version.outputs.version }}
+            Official GUI wallet for XEQMLabs (XEQM)
 
             ## Features
-            - Multi-network support: Switch between Legacy Mainnet, Mainnet (Offline), and Testnet
-            - Legacy Mainnet: Connect to working remote nodes (us/eu/asia.equilibriacc.com)
-            - Offline wallet creation: Generate wallets and addresses before mainnet launch
+            - Full mainnet support with local node
+            - Testnet for development and testing
+            - Transaction proofs, check transaction, sign & verify
+            - Service node staking and management
 
             ## Networks
-            - **Legacy Mainnet** — Live, original XEQ network with remote nodes
-            - **Mainnet** — Offline, prepare wallets for new mainnet launch
-            - **Testnet** — Local development and testing
+            - **Mainnet** — Live XEQM network
+            - **Testnet** — Development and testing
 
-            Please follow the Swap Guide for installation instructions:
-            https://equilibria-network.gitbook.io/docs/documentation/guides/xeq-legacy-swap-mainnet
+            For documentation and support:
+            https://t.me/XEQCommunity
 
             ## Notes
-            - Default network is Legacy Mainnet
+            - Default network is Mainnet with local node
             - Wallets are stored in the `wallets/` folder within the app directory (please see GUI for backup)
             - Config is stored in the `data/` folder within the app directory
 

@@ -277,7 +277,7 @@ export default {
                     color: rgba(255, 255, 255, 0.7);
                     line-height: 1.5;
                   ">
-                    <strong style="color: #ffaa00;">IMPORTANT:</strong> Save your Transaction ID above. You will need it to generate a proof for the swap portal.<br><br>
+                    <strong style="color: #ffaa00;">IMPORTANT:</strong> Save your Transaction ID above for your records.<br><br>
                     Your remaining balance will be temporarily locked while the transaction confirms. Funds typically unlock after <span style="color: #ffaa00; font-weight: 600;">~10 blocks (~20 minutes)</span>.
                   </div>
                 </div>

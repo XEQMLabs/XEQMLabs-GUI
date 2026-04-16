@@ -4,20 +4,6 @@
       <div class="q-mb-lg tab-desc">
         {{ $t("strings.proveTransactionDescription") }}
       </div>
-      <div
-        class="q-mb-lg confirmation-note"
-        style="
-          padding: 10px 14px;
-          background: rgba(255, 170, 0, 0.12);
-          border: 1px solid rgba(255, 170, 0, 0.3);
-          border-radius: 8px;
-          font-size: 13px;
-          color: rgba(255, 255, 255, 0.9);
-        "
-      >
-        <q-icon name="schedule" size="18px" class="q-mr-sm" style="vertical-align: middle;" />
-        {{ $t("strings.proveTransactionConfirmationNote") }}
-      </div>
       <div>
         <OxenField
           :label="$t('fieldLabels.transactionId')"
@@ -46,7 +32,6 @@
             @blur="v$.address.$touch"
           />
         </OxenField>
-        <!-- New XEQ Mainnet only: message field hidden for Legacy XEQ swap
         <OxenField class="q-mt-md" :label="$t('fieldLabels.message')" optional>
           <q-input
             v-model.trim="message"
@@ -56,65 +41,12 @@
             dense
           />
         </OxenField>
-        -->
-        <!-- Confirmation status -->
-        <div v-if="txid.length >= 64" class="q-mt-md q-mb-xs">
-          <span
-            v-if="confirmationStatus.code === 1"
-            style="font-size: 12px; color: #888;"
-          >
-            Checking confirmations...
-          </span>
-          <span
-            v-else-if="confirmationStatus.code === -1"
-            style="font-size: 12px; color: #ff4444; font-weight: 600;"
-          >
-            {{ confirmationStatus.message }}
-          </span>
-          <span
-            v-else-if="confirmationStatus.code === 0"
-            style="font-size: 12px; color: #ffab40; font-weight: 600;"
-          >
-            Transaction not yet confirmed — waiting for first block
-          </span>
-          <span
-            v-else-if="confirmationStatus.code === 2 && confirmationStatus.confirmations < 50"
-            style="font-size: 12px; color: #ffab40; font-weight: 600;"
-          >
-            {{ confirmationStatus.confirmations }} / 50 confirmations — {{ 50 - confirmationStatus.confirmations }} more needed before generating
-          </span>
-          <span
-            v-else-if="confirmationStatus.code === 2 && confirmationStatus.confirmations >= 50"
-            style="font-size: 12px; color: #69f0ae; font-weight: 600;"
-          >
-            {{ confirmationStatus.confirmations }} confirmations — ready to generate
-          </span>
-        </div>
-
-        <div class="q-mt-md q-mb-md">
-          <span
-            style="
-              display: inline-block;
-              padding: 8px 14px;
-              background: rgba(220, 0, 0, 0.12);
-              border: 1px solid rgba(220, 0, 0, 0.5);
-              border-radius: 8px;
-              font-size: 12px;
-              font-weight: 700;
-              color: #ff4444;
-              text-align: left;
-              line-height: 1.5;
-            "
-          >
-            PLEASE WAIT 50 CONFIRMATIONS (50 BLOCKS) BEFORE GENERATING PROOF, YOU MAY LOSE FUNDS IF YOU GENERATE A PROOF BEFORE 50 CONFIRMATIONS.
-          </span>
-        </div>
         <div class="buttons submit-button">
           <q-btn
             color="primary"
             :label="$t('buttons.generate')"
             :loading="status.code === 1"
-            :disable="status.code === 1 || !canGenerate"
+            :disable="status.code === 1"
             @click="generate"
           />
           <q-btn
