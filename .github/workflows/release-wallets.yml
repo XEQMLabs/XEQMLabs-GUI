@@ -1,0 +1,269 @@
+cat > .github/workflows/release-wallets.yml <<'YAML'
+name: Release GUI Wallets
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version without v, for example 2.0.1"
+        required: true
+        type: string
+
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build ${{ matrix.name }}
+    runs-on: ${{ matrix.runner }}
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: windows-x64
+            runner: windows-latest
+            platform: win
+            prebuilt: prebuilt/windows-x64
+            artifact_glob: dist/electron/Packaged/*.exe
+
+          - name: linux-x64
+            runner: ubuntu-latest
+            platform: linux
+            prebuilt: prebuilt/linux-x64
+            artifact_glob: dist/electron/Packaged/*.AppImage
+
+          - name: macos-arm64
+            runner: macos-15
+            platform: mac
+            prebuilt: prebuilt/macos-arm64
+            artifact_glob: dist/electron/Packaged/*.dmg
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Resolve version
+        id: version
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            VERSION="${{ inputs.version }}"
+          else
+            VERSION="${GITHUB_REF_NAME#v}"
+          fi
+
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Building XEQM GUI version $VERSION"
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20.x"
+          cache: npm
+
+      - name: Install Linux packaging dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libgtk-3-0 \
+            libnotify4 \
+            libnss3 \
+            libxss1 \
+            libxtst6 \
+            xdg-utils \
+            libatspi2.0-0 \
+            libuuid1 \
+            libsecret-1-0 \
+            libappindicator3-1 \
+            libfuse2
+
+      - name: Install npm dependencies
+        run: npm ci
+
+      - name: Stamp package version
+        shell: bash
+        run: |
+          npm version "${{ steps.version.outputs.version }}" \
+            --no-git-tag-version \
+            --allow-same-version
+
+      - name: Prepare current-chain binaries
+        shell: bash
+        run: |
+          rm -rf bin
+          mkdir -p bin
+
+          echo "Using current-chain binaries from: ${{ matrix.prebuilt }}"
+
+          if [ ! -d "${{ matrix.prebuilt }}" ]; then
+            echo "FATAL: Missing ${{ matrix.prebuilt }}"
+            exit 1
+          fi
+
+          cp -av "${{ matrix.prebuilt }}/." bin/
+
+          if [ "${{ runner.os }}" != "Windows" ]; then
+            chmod +x bin/* || true
+          fi
+
+          echo "bin contents:"
+          ls -la bin
+
+      - name: Prepare legacy binaries
+        shell: bash
+        run: |
+          rm -rf bin-legacy
+          mkdir -p bin-legacy
+
+          case "${{ matrix.name }}" in
+            windows-x64)
+              URL="https://github.com/EquilibriaCC/Equilibria/releases/download/v22.0.0/build-depends-windows-x64.zip"
+              ;;
+            linux-x64)
+              URL="https://github.com/EquilibriaCC/Equilibria/releases/download/v22.0.0/build-depends-x86_64-linux.zip"
+              ;;
+            macos-arm64)
+              URL="https://github.com/EquilibriaCC/Equilibria/releases/download/v22.0.0/build-depends-macOS-arm64.zip"
+              ;;
+            *)
+              echo "FATAL: Unknown matrix target ${{ matrix.name }}"
+              exit 1
+              ;;
+          esac
+
+          echo "Downloading legacy binaries from $URL"
+          curl -L "$URL" -o legacy.zip
+          unzip -o legacy.zip -d legacy-extract
+
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            RPC="$(find legacy-extract -type f \( -name 'xeq-wallet-rpc.exe' -o -name 'wallet-rpc.exe' -o -name 'equilibria-wallet-rpc.exe' \) | head -1)"
+            DAEMON="$(find legacy-extract -type f \( -name 'xeq-d.exe' -o -name 'daemon.exe' -o -name 'equilibriad.exe' -o -name 'equilibria.exe' \) | head -1)"
+            CLI="$(find legacy-extract -type f \( -name 'xeq-wallet-cli.exe' -o -name 'wallet-cli.exe' -o -name 'equilibria-wallet-cli.exe' \) | head -1)"
+
+            if [ -z "$RPC" ] || [ -z "$DAEMON" ]; then
+              echo "FATAL: Could not find required legacy Windows binaries"
+              find legacy-extract -type f | sort
+              exit 1
+            fi
+
+            cp "$RPC" bin-legacy/xeq-wallet-rpc.exe
+            cp "$DAEMON" bin-legacy/xeq-d.exe
+            [ -n "$CLI" ] && cp "$CLI" bin-legacy/xeq-wallet-cli.exe || true
+          else
+            RPC="$(find legacy-extract -type f \( -name 'xeq-wallet-rpc' -o -name 'wallet-rpc' -o -name 'equilibria-wallet-rpc' \) | head -1)"
+            DAEMON="$(find legacy-extract -type f \( -name 'xeq-d' -o -name 'daemon' -o -name 'equilibriad' -o -name 'equilibria' \) | head -1)"
+            CLI="$(find legacy-extract -type f \( -name 'xeq-wallet-cli' -o -name 'wallet-cli' -o -name 'equilibria-wallet-cli' \) | head -1)"
+
+            if [ -z "$RPC" ] || [ -z "$DAEMON" ]; then
+              echo "FATAL: Could not find required legacy binaries"
+              find legacy-extract -type f | sort
+              exit 1
+            fi
+
+            cp "$RPC" bin-legacy/xeq-wallet-rpc
+            cp "$DAEMON" bin-legacy/xeq-d
+            [ -n "$CLI" ] && cp "$CLI" bin-legacy/xeq-wallet-cli || true
+            chmod +x bin-legacy/* || true
+          fi
+
+          echo "bin-legacy contents:"
+          ls -la bin-legacy
+
+      - name: Verify packaged binaries
+        shell: bash
+        run: |
+          echo "Current-chain binaries:"
+          ls -la bin
+
+          echo "Legacy binaries:"
+          ls -la bin-legacy
+
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            test -f bin/xeq-wallet-rpc.exe
+            test -f bin/xeq-d.exe
+            test -f bin-legacy/xeq-wallet-rpc.exe
+            test -f bin-legacy/xeq-d.exe
+          else
+            test -f bin/xeq-wallet-rpc
+            test -f bin/xeq-d
+            test -f bin-legacy/xeq-wallet-rpc
+            test -f bin-legacy/xeq-d
+          fi
+
+      - name: Build Electron package
+        run: npm run build:${{ matrix.platform }}
+
+      - name: Copy artifacts
+        shell: bash
+        run: |
+          mkdir -p release-out
+          cp -av ${{ matrix.artifact_glob }} release-out/
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: XEQM-GUI-${{ matrix.name }}
+          path: release-out/*
+          retention-days: 14
+
+  release:
+    name: Publish GitHub Release
+    needs: build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Resolve version
+        id: version
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            VERSION="${{ inputs.version }}"
+            TAG="v${VERSION}"
+          else
+            VERSION="${GITHUB_REF_NAME#v}"
+            TAG="${GITHUB_REF_NAME}"
+          fi
+
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release
+
+      - name: List release files
+        run: |
+          find release -type f -maxdepth 3 -print
+
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.tag }}
+          name: XEQM GUI v${{ steps.version.outputs.version }}
+          files: release/**/*
+          fail_on_unmatched_files: false
+          generate_release_notes: false
+          draft: false
+          prerelease: false
+          body: |
+            # XEQM GUI v${{ steps.version.outputs.version }}
+
+            Official GUI wallet for XEQMLabs.
+
+            ## Downloads
+
+            - Windows x64: `.exe`
+            - Linux x64: `.AppImage`
+            - macOS Apple Silicon: `.dmg`
+
+            ## Important
+
+            Back up your 25-word seed phrase and wallet files before installing, reinstalling, or changing install location.
+YAML
