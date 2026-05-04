@@ -1,4 +1,3 @@
-cat > .github/workflows/release-wallets.yml <<'YAML'
 name: Release GUI Wallets
 
 on:
@@ -363,4 +362,3 @@ jobs:
             ## Important
 
             Back up your 25-word seed phrase and wallet files before installing, reinstalling, or changing install location.
-YAML
