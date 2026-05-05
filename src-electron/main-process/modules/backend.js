@@ -713,8 +713,8 @@ export class Backend {
       const binPath = net_type === "legacy"
         ? (typeof global.__ryo_bin_legacy !== "undefined" ? global.__ryo_bin_legacy : path.join(this.appDir, "bin-legacy"))
         : (typeof global.__ryo_bin !== "undefined" ? global.__ryo_bin : path.join(this.appDir, "bin"));
-      const daemonExe = path.join(binPath, process.platform === "win32" ? "xeq-d.exe" : "xeq-d");
-      const walletRpcExe = path.join(binPath, process.platform === "win32" ? "xeq-wallet-rpc.exe" : "xeq-wallet-rpc");
+      const daemonExe = path.join(binPath, process.platform === "win32" ? "xeqm-d.exe" : "xeqm-d");
+      const walletRpcExe = path.join(binPath, process.platform === "win32" ? "xeqm-rpc.exe" : "xeqm-rpc");
       const wallet_net_dir = path.join(wallet_data_dir, net_type);
       const dmn = this.config_data.daemons[net_type];
       const rpcPort = dmn.type === "remote" ? dmn.remote_port : dmn.rpc_bind_port;

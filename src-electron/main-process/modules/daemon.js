@@ -40,22 +40,22 @@ export class Daemon {
     return new Promise(resolve => {
       if (process.platform === "win32") {
         // Try .exe first, then without extension
-        let xeqd_path = path.join(binPath, "xeq-d.exe");
+        let xeqd_path = path.join(binPath, "xeqm-d.exe");
         if (!fs.existsSync(xeqd_path)) {
-          xeqd_path = path.join(binPath, "xeq-d");
+          xeqd_path = path.join(binPath, "xeqm-d");
         }
         if (!fs.existsSync(xeqd_path)) {
-          console.log(`[Daemon] xeq-d not found at: ${xeqd_path}`);
+          console.log(`[Daemon] xeqm-d not found at: ${xeqd_path}`);
           console.log(`[Daemon] bin path is: ${binPath}`);
           const netLabel = net_type ? ` (network: ${net_type})` : "";
           this.backend.sendLog(
             "warn",
-            `xeq-d not found at: ${xeqd_path} (bin dir: ${binPath})${netLabel}`
+            `xeqm-d not found at: ${xeqd_path} (bin dir: ${binPath})${netLabel}`
           );
           resolve(false);
           return;
         }
-        console.log(`[Daemon] Found xeq-d at: ${xeqd_path}`);
+        console.log(`[Daemon] Found xeqm-d at: ${xeqd_path}`);
         let xeqd_version_cmd = `"${xeqd_path}" --version`;
         // Add common DLL locations to PATH (Git's mingw64 for OpenSSL, etc.)
         const gitMingw = "C:\\Program Files\\Git\\mingw64\\bin";
@@ -65,7 +65,7 @@ export class Daemon {
           env: { ...process.env, PATH: extendedPath }
         }, (error, stdout) => {
           if (error) {
-            console.log(`[Daemon] Error running xeq-d --version:`, error);
+            console.log(`[Daemon] Error running xeqm-d --version:`, error);
             const netLabel = net_type ? `[${net_type}] ` : "";
             this.backend.sendLog("warn", `${netLabel}Daemon binary failed to run: ${error.message || String(error)}`);
             resolve(false);
@@ -74,14 +74,14 @@ export class Daemon {
           resolve(stdout);
         });
       } else {
-        let xeqd_path = path.join(binPath, "xeq-d");
+        let xeqd_path = path.join(binPath, "xeqm-d");
         let xeqd_version_cmd = `"${xeqd_path}" --version`;
         if (!fs.existsSync(xeqd_path)) {
-          console.log(`[Daemon] xeq-d not found at: ${xeqd_path}`);
+          console.log(`[Daemon] xeqm-d not found at: ${xeqd_path}`);
           const netLabel = net_type ? ` (network: ${net_type})` : "";
           this.backend.sendLog(
             "warn",
-            `xeq-d not found at: ${xeqd_path} (bin dir: ${binPath})${netLabel}`
+            `xeqm-d not found at: ${xeqd_path} (bin dir: ${binPath})${netLabel}`
           );
           resolve(false);
           return;
@@ -213,7 +213,7 @@ export class Daemon {
       }
       // Note: legacy and mainnet don't need network flags
 
-      args.push("--log-file", path.join(dirs[net_type], "logs", "xeq-d.log"));
+      args.push("--log-file", path.join(dirs[net_type], "logs", "xeqm-d.log"));
       if (daemon.rpc_bind_ip !== "127.0.0.1") {
         args.push("--confirm-external-bind");
       }
@@ -245,13 +245,13 @@ export class Daemon {
             console.log("[Daemon] Port is closed, starting new daemon...");
             const binPath = this.getBinaryPath(net_type);
             this.backend.sendLog("info", `[${net_type}] Starting local daemon: data-dir=${dataDir}, RPC 127.0.0.1:${daemon.rpc_bind_port}, P2P :${daemon.p2p_bind_port}`);
-            const daemonExePath = path.join(binPath, process.platform === "win32" ? "xeq-d.exe" : "xeq-d");
+            const daemonExePath = path.join(binPath, process.platform === "win32" ? "xeqm-d.exe" : "xeqm-d");
             this.backend.sendLog("info", `[${net_type}] Daemon binary: ${daemonExePath}`);
             if (process.platform === "win32") {
               // Try .exe first, then without extension
-              let xeqd_path = path.join(binPath, "xeq-d.exe");
+              let xeqd_path = path.join(binPath, "xeqm-d.exe");
               if (!fs.existsSync(xeqd_path)) {
-                xeqd_path = path.join(binPath, "xeq-d");
+                xeqd_path = path.join(binPath, "xeqm-d");
               }
               this.daemonProcess = child_process.spawn(xeqd_path, args, {
                 cwd: binPath,
@@ -259,7 +259,7 @@ export class Daemon {
               });
             } else {
               this.daemonProcess = child_process.spawn(
-                path.join(binPath, "xeq-d"),
+                path.join(binPath, "xeqm-d"),
                 args,
                 {
                   detached: true,

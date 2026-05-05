@@ -276,12 +276,12 @@ export class WalletRPC {
         const binPath = this.getBinaryPath(net_type);
         let rpcPath;
         if (process.platform === "win32") {
-          rpcPath = path.join(binPath, "xeq-wallet-rpc.exe");
+          rpcPath = path.join(binPath, "xeqm-rpc.exe");
           if (!fs.existsSync(rpcPath)) {
-            rpcPath = path.join(binPath, "xeq-wallet-rpc");
+            rpcPath = path.join(binPath, "xeqm-rpc");
           }
         } else {
-          rpcPath = path.join(binPath, "xeq-wallet-rpc");
+          rpcPath = path.join(binPath, "xeqm-rpc");
         }
 
         this.backend.sendLog("info", `Looking for wallet-rpc at: ${rpcPath}`);
