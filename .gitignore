@@ -25,11 +25,12 @@ yarn-error.log*
 .\#*
 *.bak
 
-# bin directories
+# bin directory (populated at build time from core release artifacts)
 bin/*
 !bin/.gitkeep
-bin-legacy/*
-!bin-legacy/.gitkeep
+
+# prebuilt staging — binaries fetched fresh per build, never committed
+prebuilt/*/*
 
 # Environment files
 .env
@@ -73,7 +74,6 @@ out/
 packages/
 *.dmg
 *.exe
-!prebuilt/**/*.exe
 *.deb
 *.rpm
 *.AppImage

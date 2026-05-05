@@ -39,7 +39,7 @@
                 <q-tooltip>{{ $t("menuItems.rescanWallet") }}</q-tooltip>
               </q-btn>
             </div>
-            <div v-if="balancestakeselector === 'balance' && is_legacy" class="usd-value">
+            <div v-if="balancestakeselector === 'balance' && xeqm_price > 0" class="usd-value">
               <q-icon name="attach_money" size="13px" />{{ usdValue }}
             </div>
           </div>
@@ -107,9 +107,6 @@ export default {
       is_wallet_open: state =>
         state.gateway.wallet.info && state.gateway.wallet.info.name
     }),
-    is_legacy() {
-      return this.net_type === "legacy";
-    },
     usdValue() {
       if (this.xeqm_price === null || this.xeqm_price === undefined) return "≈ ---";
       const xeqm = (this.info?.balance || 0) / 1e4;

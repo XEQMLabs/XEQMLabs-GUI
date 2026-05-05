@@ -677,7 +677,6 @@ export default {
       createNew: "Create new wallet",
       createdOrRestored: "Wallet created/restored",
       importFromFile: "Import wallet from file",
-      importFromLegacyGUI: "Import wallet from legacy GUI",
       importFromOldGUI: "Import wallet from old GUI",
       restoreFromSeed: "Restore wallet from seed",
       restoreViewOnly: "Restore view-only wallet"

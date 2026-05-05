@@ -1,9 +1,7 @@
 export default {
   computed: {
-    // Legacy network uses 1e4 (4 decimal places), new mainnet/testnet use 1e9
     atomicDivisor() {
-      const netType = this.$store?.state?.gateway?.app?.config?.app?.net_type || "mainnet";
-      return netType === "legacy" ? 1e4 : 1e9;
+      return 1e9;
     }
   },
   methods: {

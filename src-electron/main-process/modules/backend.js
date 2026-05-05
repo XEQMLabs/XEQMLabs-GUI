@@ -135,9 +135,6 @@ export class Backend {
     // XEQM mainnet remote nodes — none available yet
     this.remotes = [];
 
-    // Legacy remotes removed in v2.0 — new mainnet only
-    this.legacyRemotes = [];
-
     this.token = config.token;
 
     this.wss = new WebSocket.Server({
@@ -457,7 +454,7 @@ export class Backend {
   syncWalletsToBackup(avoidOverwrite = false) {
     if (!this.walletsBackupDir || !this.config_data.app || !this.config_data.app.wallet_data_dir) return;
     const walletDataDir = this.config_data.app.wallet_data_dir;
-    const networks = ["mainnet", "legacy", "testnet", "stagenet"];
+    const networks = ["mainnet", "testnet", "stagenet"];
     try {
       for (const net of networks) {
         const srcNet = path.join(walletDataDir, net);
@@ -542,7 +539,6 @@ export class Backend {
 
     this.send("set_app_data", {
       remotes: this.remotes,
-      legacyRemotes: this.legacyRemotes,
       defaults: this.defaults
     });
 
@@ -612,7 +608,7 @@ export class Backend {
       console.log("[Backend] After validation, net_type:", this.config_data.app?.net_type);
 
       // Migrate local_remote -> remote (legacy option removed)
-      for (const net of ["mainnet", "stagenet", "testnet", "legacy"]) {
+      for (const net of ["mainnet", "stagenet", "testnet"]) {
         if (
           this.config_data.daemons &&
           this.config_data.daemons[net] &&
@@ -694,8 +690,7 @@ export class Backend {
       const dirs = {
         mainnet: this.config_data.app.data_dir,
         stagenet: path.join(this.config_data.app.data_dir, "stagenet"),
-        testnet: path.join(this.config_data.app.data_dir, "testnet"),
-        legacy: path.join(this.config_data.app.data_dir, "legacy")
+        testnet: path.join(this.config_data.app.data_dir, "testnet")
       };
 
       // Make sure we have the directories we need
@@ -710,9 +705,9 @@ export class Backend {
       }
 
       // Environment summary for Troubleshooting tab
-      const binPath = net_type === "legacy"
-        ? (typeof global.__ryo_bin_legacy !== "undefined" ? global.__ryo_bin_legacy : path.join(this.appDir, "bin-legacy"))
-        : (typeof global.__ryo_bin !== "undefined" ? global.__ryo_bin : path.join(this.appDir, "bin"));
+      const binPath = typeof global.__ryo_bin !== "undefined"
+        ? global.__ryo_bin
+        : path.join(this.appDir, "bin");
       const daemonExe = path.join(binPath, process.platform === "win32" ? "xeqm-d.exe" : "xeqm-d");
       const walletRpcExe = path.join(binPath, process.platform === "win32" ? "xeqm-rpc.exe" : "xeqm-rpc");
       const wallet_net_dir = path.join(wallet_data_dir, net_type);
@@ -743,17 +738,7 @@ export class Backend {
       this.daemon = new Daemon(this);
       this.walletd = new WalletRPC(this);
 
-      // Check if we should auto-connect (legacy network with remote node)
-      const shouldAutoConnect =
-        net_type === "legacy" &&
-        this.config_data.daemons[net_type] &&
-        this.config_data.daemons[net_type].type === "remote";
-
-      if (shouldAutoConnect) {
-        this.sendLog("info", "Legacy network detected with remote node - auto-connecting...");
-      } else {
-        this.sendLog("info", "Backend initialized in offline mode.");
-      }
+      this.sendLog("info", "Backend initialized in offline mode.");
 
       // Start in appropriate mode
       this.send("set_app_data", {
@@ -768,7 +753,7 @@ export class Backend {
         .start(this.config_data)
         .then(() => {
           this.send("set_app_data", { status: { code: 7 } }); // Reading wallet list
-          this.walletd.listWallets(true);
+          this.walletd.listWallets();
           this.send("set_app_data", {
             status: { code: 0 }, // Ready
             daemon_connected: false
@@ -781,17 +766,7 @@ export class Backend {
             2 * 60 * 1000
           );
 
-          // Auto-connect for legacy remote, otherwise show welcome message
-          if (shouldAutoConnect) {
-            this.send("show_notification", {
-              type: "info",
-              message: "Connecting to remote node...",
-              timeout: 3000
-            });
-            // Auto-connect to daemon
-            this.connectDaemon();
-          } else {
-            // Show welcome message for new users or non-legacy networks
+          {
             this.send("show_notification", {
               type: "info",
               color: "cyan",

@@ -182,7 +182,7 @@ export default configure(function () {
           "!data/**"
         ],
 
-        extraResources: ["bin", "bin-legacy"]
+        extraResources: ["bin"]
       }
     }
   };

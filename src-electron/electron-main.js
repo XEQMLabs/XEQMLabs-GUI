@@ -29,10 +29,8 @@ if (
 if (process.env.PROD) {
   global.__statics = path.join(__dirname, "").replace(/\\/g, "\\\\");
   global.__ryo_bin = path.join(__dirname, "..", "bin").replace(/\\/g, "\\\\");
-  global.__ryo_bin_legacy = path.join(__dirname, "..", "bin-legacy").replace(/\\/g, "\\\\");
 } else {
   global.__ryo_bin = path.join(process.cwd(), "bin").replace(/\\/g, "\\\\");
-  global.__ryo_bin_legacy = path.join(process.cwd(), "bin-legacy").replace(/\\/g, "\\\\");
 }
 
 let mainWindow, backend;

@@ -25,13 +25,8 @@ export class Daemon {
     this.PIVOT_BLOCK_TIME = 120;
   }
 
-  // Get the correct binary path based on network type
-  getBinaryPath(net_type = null) {
-    const netType = net_type || this.net_type;
-    // Use legacy binaries for legacy network
-    if (netType === "legacy") {
-      return __ryo_bin_legacy;
-    }
+  // Get the binary path for the active network
+  getBinaryPath() {
     return __ryo_bin;
   }
 
@@ -187,12 +182,8 @@ export class Daemon {
         daemon.p2p_bind_ip,
         "--p2p-bind-port",
         daemon.p2p_bind_port,
-        "--rpc-bind-ip",
-        daemon.rpc_bind_ip,
-        "--rpc-bind-port",
-        daemon.rpc_bind_port,
-        "--zmq-rpc-bind-ip",
-        daemon.zmq_rpc_bind_ip,
+        "--rpc-admin",
+        `${daemon.rpc_bind_ip}:${daemon.rpc_bind_port}`,
         "--out-peers",
         daemon.out_peers,
         "--in-peers",
@@ -205,13 +196,11 @@ export class Daemon {
         daemon.log_level
       ];
 
-      // Add network flags - legacy uses no flag (it's mainnet on the old chain)
       if (net_type === "testnet") {
         args.push("--testnet");
       } else if (net_type === "stagenet") {
         args.push("--stagenet");
       }
-      // Note: legacy and mainnet don't need network flags
 
       args.push("--log-file", path.join(dirs[net_type], "logs", "xeqm-d.log"));
       if (daemon.rpc_bind_ip !== "127.0.0.1") {

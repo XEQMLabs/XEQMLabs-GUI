@@ -139,9 +139,8 @@ export default {
           state.gateway.wallet.address_list.address_book) ||
         []
     }),
-    // Legacy network uses 1e4 (4 decimal places), new mainnet/testnet use 1e9
     atomicDivisor() {
-      return this.netType === "legacy" ? 1e4 : 1e9;
+      return 1e9;
     },
     tx_list() {
       const list = this.tx_list_raw || [];

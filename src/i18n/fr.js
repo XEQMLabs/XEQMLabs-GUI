@@ -507,8 +507,6 @@ export default {
       createNew: "Créer un nouveau portefeuille",
       createdOrRestored: "Créer ou restaurer un portefeuille",
       importFromFile: "Importer un portefeuille à partir d'un fichier",
-      importFromLegacyGUI:
-        "Importer un portefeuille à partir d'un héritage GUI",
       importFromOldGUI: "Importer un portefeuille à partir d'un ancien GUI",
       restoreFromSeed: "Restaurer un portefeuille à partir de mots clés",
       restoreViewOnly: "Restaurer un portefeuille en mode d'affichage seulement"

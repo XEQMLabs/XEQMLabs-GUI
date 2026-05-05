@@ -203,9 +203,8 @@ export default {
         return nodesForContribution;
       }
     }),
-    // Legacy network uses 1e4 (4 decimal places), new mainnet/testnet use 1e9
     atomicDivisor() {
-      return this.netType === "legacy" ? 1e4 : 1e9;
+      return 1e9;
     },
     stakeStatusCode() {
       return this.stake_status ? this.stake_status.code : 0;

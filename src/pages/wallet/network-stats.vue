@@ -161,9 +161,8 @@ export default {
       serviceNodesRaw: state => state.gateway.daemon.service_nodes.nodes || [],
       netType: state => state.gateway.app.config.app?.net_type || "mainnet"
     }),
-    // Legacy network uses 1e4 (4 decimal places), new mainnet/testnet use 1e9
     atomicDivisor() {
-      return this.netType === "legacy" ? 1e4 : 1e9;
+      return 1e9;
     },
     serviceNodes() {
       const now = Math.floor(Date.now() / 1000);
@@ -207,7 +206,7 @@ export default {
       const staked = node.total_contributed || 0;
       const stakingRequirement = node.staking_requirement || 0;
 
-      // Convert from atomic units to XEQM (legacy uses 1e4, mainnet uses 1e9)
+      // Convert from atomic units to XEQM (mainnet uses 1e9)
       const stakedXEQM = Math.round(staked / this.atomicDivisor);
       const requiredXEQM = Math.round(stakingRequirement / this.atomicDivisor);
 

@@ -42,9 +42,8 @@ export default {
       unlocked_balance: state => state.gateway.wallet.info.unlocked_balance,
       netType: state => state.gateway.app.config.app?.net_type || "mainnet"
     }),
-    // Legacy network uses 1e4 (4 decimal places), new mainnet/testnet use 1e9
     atomicDivisor() {
-      return this.netType === "legacy" ? 1e4 : 1e9;
+      return 1e9;
     },
     disable_submit_button() {
       const minBalance = this.updating ? 0.05 : 7.1;

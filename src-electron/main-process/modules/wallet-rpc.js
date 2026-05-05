@@ -87,20 +87,14 @@ export class WalletRPC {
     };
   }
 
-  // Get the correct binary path based on network type
-  getBinaryPath(net_type = null) {
-    const netType = net_type || this.net_type;
-    // Use legacy binaries for legacy network
-    if (netType === "legacy") {
-      return __ryo_bin_legacy;
-    }
+  // Get the binary path for the active network
+  getBinaryPath() {
     return __ryo_bin;
   }
 
-  // Get the atomic unit divisor based on network type
-  // Legacy network uses 1e4 (4 decimal places), new mainnet/testnet use 1e9
+  // Atomic unit divisor (XEQM mainnet uses 1e9)
   getAtomicDivisor() {
-    return this.net_type === "legacy" ? 1e4 : 1e9;
+    return 1e9;
   }
 
   // this function will take an options object for testnet, data-dir, etc
@@ -128,8 +122,7 @@ export class WalletRPC {
       this.dirs = {
         mainnet: path.join(this.wallet_data_dir, "mainnet"),
         stagenet: path.join(this.wallet_data_dir, "stagenet"),
-        testnet: path.join(this.wallet_data_dir, "testnet"),
-        legacy: path.join(this.wallet_data_dir, "legacy")
+        testnet: path.join(this.wallet_data_dir, "testnet")
       };
 
       // Use network-specific wallet directory (same as local wallet-rpc)
@@ -216,14 +209,11 @@ export class WalletRPC {
         this.dirs = {
           mainnet: path.join(this.wallet_data_dir, "mainnet"),
           stagenet: path.join(this.wallet_data_dir, "stagenet"),
-          testnet: path.join(this.wallet_data_dir, "testnet"),
-          legacy: path.join(this.wallet_data_dir, "legacy")
+          testnet: path.join(this.wallet_data_dir, "testnet")
         };
 
-        // Use network-specific wallet directory
         // Mainnet wallets go in wallet_data_dir/mainnet
         // Testnet wallets go in wallet_data_dir/testnet
-        // Legacy wallets go in wallet_data_dir/legacy
         this.wallet_dir = path.resolve(this.dirs[net_type]);
         args.push("--wallet-dir", this.wallet_dir);
 
@@ -239,13 +229,11 @@ export class WalletRPC {
         const log_file = path.join(logs_dir, "wallet-rpc.log");
         args.push("--log-file", log_file);
 
-        // Add network flags - legacy uses no flag (it's mainnet on the old chain)
         if (net_type === "testnet") {
           args.push("--testnet");
         } else if (net_type === "stagenet") {
           args.push("--stagenet");
         }
-        // Note: legacy and mainnet don't need network flags
 
         if (fs.existsSync(log_file)) {
           fs.truncateSync(log_file, 0);
@@ -1604,7 +1592,7 @@ export class WalletRPC {
         const bal = this.wallet_state.balance;
         const unlocked = this.wallet_state.unlocked_balance;
         const divisor = this.getAtomicDivisor();
-        // Convert from atomic units (legacy: 1e4, mainnet: 1e9)
+        // Convert from atomic units (mainnet: 1e9)
         const balXEQM = bal !== null ? (bal / divisor).toFixed(4) : "null";
         const unlockedXEQM = unlocked !== null ? (unlocked / divisor).toFixed(4) : "null";
         this.backend.sendLog(
@@ -3974,7 +3962,7 @@ export class WalletRPC {
     return { wallets, directories };
   }
 
-  listWallets(legacy = false, addressPatch = null) {
+  listWallets(addressPatch = null) {
     let wallets = {
       list: [],
       directories: []
@@ -4017,68 +4005,7 @@ export class WalletRPC {
       wallets.list.push(...stagenetResult.wallets);
     }
 
-    // Scan legacy wallets (wallets/legacy)
-    const legacyDir = path.join(base_wallet_dir, "legacy");
-    if (!fs.existsSync(legacyDir)) {
-      fs.mkdirpSync(legacyDir);
-    }
-    const legacyResult = this._scanWalletDirectory(legacyDir, "legacy");
-    wallets.list.push(...legacyResult.wallets);
-
     console.log(`[WalletRPC] Total wallets found: ${wallets.list.length}`);
-
-    // Check for legacy wallet files
-    if (legacy) {
-      wallets.legacy = [];
-      let legacy_paths = [];
-      if (os.platform() == "win32") {
-        legacy_paths = ["C:\\ProgramData\\Loki"];
-      } else {
-        legacy_paths = [path.join(os.homedir(), "Loki")];
-      }
-      for (var i = 0; i < legacy_paths.length; i++) {
-        try {
-          let legacy_config_path = path.join(
-            legacy_paths[i],
-            "config",
-            "wallet_info.json"
-          );
-          if (this.net_type === "test") {
-            legacy_config_path = path.join(
-              legacy_paths[i],
-              "testnet",
-              "config",
-              "wallet_info.json"
-            );
-          }
-          if (!fs.existsSync(legacy_config_path)) {
-            continue;
-          }
-
-          let legacy_config = JSON.parse(
-            fs.readFileSync(legacy_config_path, "utf8")
-          );
-          let legacy_wallet_path = legacy_config.wallet_filepath;
-          if (!fs.existsSync(legacy_wallet_path)) {
-            continue;
-          }
-
-          let legacy_address = "";
-          if (fs.existsSync(legacy_wallet_path + ".address.txt")) {
-            legacy_address = fs.readFileSync(
-              legacy_wallet_path + ".address.txt",
-              "utf8"
-            );
-          }
-          wallets.legacy.push({
-            path: legacy_wallet_path,
-            address: legacy_address
-          });
-        } catch (e) {
-          // Something went wrong
-        }
-      }
-    }
 
     // Ensure newly created/restored wallet has address in list (in case .address.txt not read yet)
     if (addressPatch && addressPatch.name && addressPatch.address) {

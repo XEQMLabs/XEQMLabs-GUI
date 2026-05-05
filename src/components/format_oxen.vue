@@ -27,9 +27,8 @@ export default {
     ...mapState({
       netType: state => state.gateway.app.config.app?.net_type || "mainnet"
     }),
-    // Legacy network uses 1e4 (4 decimal places), new mainnet/testnet use 1e9
     atomicDivisor() {
-      return this.netType === "legacy" ? 1e4 : 1e9;
+      return 1e9;
     },
     value() {
       let value = this.amount / this.atomicDivisor;

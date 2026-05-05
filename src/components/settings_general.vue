@@ -495,7 +495,6 @@ export default {
   computed: mapState({
     theme: state => state.gateway.app.config.appearance.theme,
     remotes: state => state.gateway.app.remotes,
-    legacyRemotes: state => state.gateway.app.legacyRemotes,
     config: state => state.gateway.app.pending_config,
     daemon_connected: state => state.gateway.app.daemon_connected,
     daemon_connecting: state => state.gateway.app.daemon_connecting,

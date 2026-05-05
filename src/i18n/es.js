@@ -499,7 +499,6 @@ export default {
       createNew: "Crear un monedero nuevo",
       createdOrRestored: "Monedero creado/restaurado",
       importFromFile: "Importar monedero de un archivo",
-      importFromLegacyGUI: "Importar monedero de una interfaz gráfica heredada",
       importFromOldGUI: "Importar monedero de una interfaz gráfica antigua",
       restoreFromSeed: "Restaurar monedero mediante semilla",
       restoreViewOnly: "Restaurar monedero de solo visualización"

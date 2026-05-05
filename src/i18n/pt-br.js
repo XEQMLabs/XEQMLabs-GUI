@@ -499,8 +499,6 @@ export default {
       createNew: "Criar nova carteira",
       createdOrRestored: "Carteira criada/restaurada",
       importFromFile: "Importar carteira a partir de ficheiro",
-      importFromLegacyGUI:
-        "Importar carteira a partir da antiga carteira GUI (legado)",
       importFromOldGUI: "Importar carteira a partir da antiga carteira GUI",
       restoreFromSeed: "Restaurar carteira a partir de semente",
       restoreViewOnly: "Restaurar carteira visualização-apenas"

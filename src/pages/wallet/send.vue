@@ -199,9 +199,8 @@ export default {
       },
       confirmTransaction: state => state.gateway.tx_status.code === 1
     }),
-    // Legacy network uses 1e4 (4 decimal places), new mainnet/testnet use 1e9
     atomicDivisor() {
-      return this.netType === "legacy" ? 1e4 : 1e9;
+      return 1e9;
     },
     txStatusCode() {
       return this.tx_status ? this.tx_status.code : DO_NOTHING;

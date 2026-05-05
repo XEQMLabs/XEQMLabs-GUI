@@ -61,8 +61,6 @@ export default {
           return this.$t("titles.wallet.importFromFile");
         case "wallet-import-view-only":
           return this.$t("titles.wallet.restoreViewOnly");
-        case "wallet-import-legacy":
-          return this.$t("titles.wallet.importFromLegacyGUI");
         case "wallet-import-old-gui":
           return this.$t("titles.wallet.importFromOldGUI");
         case "wallet-created":

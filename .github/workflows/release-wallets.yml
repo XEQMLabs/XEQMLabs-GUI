@@ -4,9 +4,14 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: "Version without v, for example 2.0.1"
+        description: "GUI version without v, for example 2.0.1"
         required: true
         type: string
+      core_release:
+        description: "Core release tag to bundle (default: latest published)"
+        required: false
+        type: string
+        default: ""
 
   push:
     tags:
@@ -27,19 +32,22 @@ jobs:
           - name: windows-x64
             runner: windows-latest
             platform: win
-            prebuilt: prebuilt/windows-x64
+            core_pattern: "XEQM-core-*-windows-x86_64-*.zip"
+            core_archive: zip
             artifact_glob: dist/electron/Packaged/*.exe
 
           - name: linux-x64
             runner: ubuntu-latest
             platform: linux
-            prebuilt: prebuilt/linux-x64
+            core_pattern: "XEQM-core-*-ubuntu-24.04-x86_64-*.tar.gz"
+            core_archive: tar.gz
             artifact_glob: dist/electron/Packaged/*.AppImage
 
           - name: macos-arm64
             runner: macos-15
             platform: mac
-            prebuilt: prebuilt/macos-arm64
+            core_pattern: "XEQM-core-*-macos-arm64-*.tar.gz"
+            core_archive: tar.gz
             artifact_glob: dist/electron/Packaged/*.dmg
 
     steps:
@@ -92,110 +100,79 @@ jobs:
             --no-git-tag-version \
             --allow-same-version
 
-      - name: Prepare current-chain binaries
+      - name: Resolve core release tag
+        id: core
         shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          rm -rf bin
-          mkdir -p bin
+          set -euo pipefail
+          TAG="${{ inputs.core_release }}"
+          if [ -z "$TAG" ]; then
+            TAG="$(gh release view --repo EquilibriaHorizon/equilibria-core --json tagName --jq .tagName)"
+          fi
+          echo "Resolved core release tag: $TAG"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
 
-          echo "Using current-chain binaries from: ${{ matrix.prebuilt }}"
+      - name: Download core binaries from release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          rm -rf bin core-download
+          mkdir -p bin core-download
 
-          if [ ! -d "${{ matrix.prebuilt }}" ]; then
-            echo "FATAL: Missing ${{ matrix.prebuilt }}"
+          gh release download "${{ steps.core.outputs.tag }}" \
+            --repo EquilibriaHorizon/equilibria-core \
+            --pattern "${{ matrix.core_pattern }}" \
+            --dir core-download
+
+          echo "Downloaded:"
+          ls -la core-download
+
+          ARCHIVE="$(find core-download -maxdepth 1 -type f \( -name '*.zip' -o -name '*.tar.gz' \) | head -1)"
+          if [ -z "$ARCHIVE" ]; then
+            echo "FATAL: Could not locate core archive after download"
             exit 1
           fi
 
-          cp -av "${{ matrix.prebuilt }}/." bin/
+          mkdir -p core-extract
+          if [ "${{ matrix.core_archive }}" = "zip" ]; then
+            unzip -q "$ARCHIVE" -d core-extract
+          else
+            tar -xzf "$ARCHIVE" -C core-extract
+          fi
+
+          INNER="$(find core-extract -mindepth 1 -maxdepth 1 -type d | head -1)"
+          if [ -z "$INNER" ]; then
+            echo "FATAL: Core archive layout unexpected (no inner directory)"
+            find core-extract | sort
+            exit 1
+          fi
+
+          cp -av "$INNER/." bin/
 
           if [ "${{ runner.os }}" != "Windows" ]; then
-            chmod +x bin/* || true
+            chmod +x bin/xeqm-d bin/xeqm-rpc bin/xeqm-wallet || true
           fi
 
-          echo "bin contents:"
+          echo "bin/ contents:"
           ls -la bin
-
-      - name: Prepare legacy binaries
-        shell: bash
-        run: |
-          rm -rf bin-legacy
-          mkdir -p bin-legacy
-
-          case "${{ matrix.name }}" in
-            windows-x64)
-              URL="https://github.com/EquilibriaCC/Equilibria/releases/download/v22.0.0/build-depends-windows-x64.zip"
-              ;;
-            linux-x64)
-              URL="https://github.com/EquilibriaCC/Equilibria/releases/download/v22.0.0/build-depends-x86_64-linux.zip"
-              ;;
-            macos-arm64)
-              URL="https://github.com/EquilibriaCC/Equilibria/releases/download/v22.0.0/build-depends-macOS-arm64.zip"
-              ;;
-            *)
-              echo "FATAL: Unknown matrix target ${{ matrix.name }}"
-              exit 1
-              ;;
-          esac
-
-          echo "Downloading legacy binaries from $URL"
-          curl -L "$URL" -o legacy.zip
-          unzip -o legacy.zip -d legacy-extract
-
-          if [ "${{ runner.os }}" = "Windows" ]; then
-            RPC="$(find legacy-extract -type f \( -name 'xeq-wallet-rpc.exe' -o -name 'wallet-rpc.exe' -o -name 'equilibria-wallet-rpc.exe' \) | head -1)"
-            DAEMON="$(find legacy-extract -type f \( -name 'xeq-d.exe' -o -name 'daemon.exe' -o -name 'equilibriad.exe' -o -name 'equilibria.exe' \) | head -1)"
-            CLI="$(find legacy-extract -type f \( -name 'xeq-wallet-cli.exe' -o -name 'wallet-cli.exe' -o -name 'equilibria-wallet-cli.exe' \) | head -1)"
-
-            if [ -z "$RPC" ] || [ -z "$DAEMON" ]; then
-              echo "FATAL: Could not find required legacy Windows binaries"
-              find legacy-extract -type f | sort
-              exit 1
-            fi
-
-            cp "$RPC" bin-legacy/xeq-wallet-rpc.exe
-            cp "$DAEMON" bin-legacy/xeq-d.exe
-            [ -n "$CLI" ] && cp "$CLI" bin-legacy/xeq-wallet-cli.exe || true
-          else
-            RPC="$(find legacy-extract -type f \( -name 'xeq-wallet-rpc' -o -name 'wallet-rpc' -o -name 'equilibria-wallet-rpc' \) | head -1)"
-            DAEMON="$(find legacy-extract -type f \( -name 'xeq-d' -o -name 'daemon' -o -name 'equilibriad' -o -name 'equilibria' \) | head -1)"
-            CLI="$(find legacy-extract -type f \( -name 'xeq-wallet-cli' -o -name 'wallet-cli' -o -name 'equilibria-wallet-cli' \) | head -1)"
-
-            if [ -z "$RPC" ] || [ -z "$DAEMON" ]; then
-              echo "FATAL: Could not find required legacy binaries"
-              find legacy-extract -type f | sort
-              exit 1
-            fi
-
-            cp "$RPC" bin-legacy/xeq-wallet-rpc
-            cp "$DAEMON" bin-legacy/xeq-d
-            [ -n "$CLI" ] && cp "$CLI" bin-legacy/xeq-wallet-cli || true
-            chmod +x bin-legacy/* || true
-          fi
-
-          echo "bin-legacy contents:"
-          ls -la bin-legacy
 
       - name: Verify packaged binaries
         shell: bash
         run: |
-          echo "Current-chain binaries:"
-          ls -la bin
-
-          echo "Legacy binaries:"
-          ls -la bin-legacy
-
           if [ "${{ runner.os }}" = "Windows" ]; then
             test -f bin/xeqm-rpc.exe
             test -f bin/xeqm-d.exe
             test -f bin/xeqm-wallet.exe
-            test -f bin-legacy/xeq-wallet-rpc.exe
-            test -f bin-legacy/xeq-d.exe
           else
             test -f bin/xeqm-rpc
             test -f bin/xeqm-d
             test -f bin/xeqm-wallet
-            test -f bin-legacy/xeq-wallet-rpc
-            test -f bin-legacy/xeq-d
           fi
+          echo "All required binaries present in bin/"
 
       - name: Import macOS signing certificate
         if: runner.os == 'macOS'
@@ -277,15 +254,10 @@ jobs:
             codesign --display --verbose=4 "$file"
           }
 
-          echo "Signing current-chain binaries..."
+          echo "Signing core binaries..."
           sign_one "bin/xeqm-d"
           sign_one "bin/xeqm-wallet"
           sign_one "bin/xeqm-rpc"
-
-          echo "Signing legacy binaries..."
-          sign_one "bin-legacy/xeq-d"
-          sign_one "bin-legacy/xeq-wallet-cli"
-          sign_one "bin-legacy/xeq-wallet-rpc"
 
       - name: Build Electron package
         env:

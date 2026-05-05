@@ -505,7 +505,6 @@ export default {
       createNew: "Neue Wallet erstellen",
       createdOrRestored: "Wallet erstellt/wiederhergestellt",
       importFromFile: "Importieren der Wallet aus Datei",
-      importFromLegacyGUI: "Wiederherstellung der Wallet von legacy GUI",
       importFromOldGUI: "Wiederherstellung der Wallet von altem GUI",
       restoreFromSeed: "Wiederherstellung Wallet von Seed Wörtern",
       restoreViewOnly: "Wiederherstellung Anzeige Wallet"

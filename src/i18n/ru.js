@@ -500,7 +500,6 @@ export default {
       createNew: "Создать новый кошелек",
       createdOrRestored: "Кошелек создан/восстановлен",
       importFromFile: "Импортировать кошелек из файла",
-      importFromLegacyGUI: "Импортировать кошелек из предыдущего GUI",
       importFromOldGUI: "Импортировать кошелек из старого  GUI",
       restoreFromSeed: "Восстановить кошелек из seed-фразы",
       restoreViewOnly: "Восстановить кошелек только-для-чтения"

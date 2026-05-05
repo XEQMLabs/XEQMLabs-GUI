@@ -53,11 +53,6 @@ export default [
         component: () => import("pages/wallet-select/import.vue")
       },
       {
-        path: "import-legacy",
-        name: "wallet-import-legacy",
-        component: () => import("pages/wallet-select/import-legacy.vue")
-      },
-      {
         path: "created",
         name: "wallet-created",
         component: () => import("pages/wallet-select/created.vue")

@@ -374,9 +374,6 @@ export default {
     },
     importOldGuiWallets() {
       this.$router.replace({ name: "wallet-import-old-gui" });
-    },
-    importLegacyWallet() {
-      this.$router.replace({ name: "wallet-import-legacy" });
     }
   }
 };
