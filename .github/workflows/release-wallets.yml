@@ -321,16 +321,80 @@ jobs:
           draft: false
           prerelease: false
           body: |
-            # XEQM GUI v${{ steps.version.outputs.version }}
+            Official GUI wallet for **XEQMLabs (XEQM)**.
 
-            Official GUI wallet for XEQMLabs.
+            For documentation and support: [t.me/XEQCommunity](https://t.me/XEQCommunity)
 
             ## Downloads
 
-            - Windows x64: `.exe`
-            - Linux x64: `.AppImage`
-            - macOS Apple Silicon: `.dmg`
+            | Platform | File |
+            |----------|------|
+            | Windows x64 | `.exe` installer |
+            | Linux x64 | `.AppImage` |
+            | macOS Apple Silicon | `.dmg` |
 
-            ## Important
+            Each download has a `.sha256` companion file you can use to verify integrity before installing.
 
-            Back up your 25-word seed phrase and wallet files before installing, reinstalling, or changing install location.
+            ---
+
+            ## Install instructions
+
+            ### Windows
+
+            1. Download `XEQM-GUI-${{ steps.version.outputs.version }}-win.exe`
+            2. Create a dedicated folder for the wallet (e.g. `C:\XEQM`)
+            3. Run the installer from that folder
+
+            No additional dependencies required — installer is fully self-contained.
+
+            ### Linux
+
+            1. Download `XEQM-GUI-${{ steps.version.outputs.version }}-linux.AppImage`
+            2. Install runtime dependencies (one-time):
+               ```bash
+               sudo apt-get update
+               sudo apt-get install -y libboost-all-dev libsodium23 libfuse2t64 libzmq5 libzstd1
+               ```
+               On Ubuntu 22.04 and below, use `libfuse2` instead of `libfuse2t64`.
+            3. Make the AppImage executable and run it:
+               ```bash
+               chmod +x XEQM-GUI-${{ steps.version.outputs.version }}-linux.AppImage
+               ./XEQM-GUI-${{ steps.version.outputs.version }}-linux.AppImage
+               ```
+               Or right-click → Properties → enable "Allow executing file as program", then double-click.
+            4. If it fails with a sandbox error, run with `--no-sandbox`:
+               ```bash
+               ./XEQM-GUI-${{ steps.version.outputs.version }}-linux.AppImage --no-sandbox
+               ```
+
+            ### macOS (Apple Silicon)
+
+            1. Download `XEQM-GUI-${{ steps.version.outputs.version }}-mac.dmg`
+            2. Open the .dmg and drag **XEQM GUI** to your Applications folder
+            3. Double-click to launch
+
+            The macOS build is codesigned and notarized — no Homebrew or library installs are needed. All required libraries are bundled inside the `.app`.
+
+            **If the app won't open** — if you see "app is damaged" or "cannot be opened", run this once in Terminal:
+            ```bash
+            xattr -cr "/Applications/XEQM GUI.app"
+            ```
+            Then double-click again.
+
+            ---
+
+            ## Where things live
+
+            | What | Location |
+            |------|----------|
+            | Wallet files | `wallets/<network>/` inside the app's install folder |
+            | Configuration | `data/` inside the app's install folder |
+            | Auto-backup target | configurable in **Network Settings → Wallet Backup Path** |
+
+            ## ⚠️ Back up your seed and wallet files
+
+            Back up your **25-word seed phrase** and store it somewhere safe before installing, reinstalling, or changing install location. **If you lose the seed, your funds cannot be recovered.**
+
+            Wallet files are stored in the app's install folder. Reinstalling or installing to a different folder may overwrite them. We are not responsible for lost seeds, wallet files, or funds resulting from overwriting, reinstall, or user error.
+
+            Use the in-app **Wallet Backup Path** (Network Settings) to mirror your wallet folder elsewhere. Keep your own off-machine backup of either that folder or your seed regardless.
