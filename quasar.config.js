@@ -134,7 +134,7 @@ export default configure(function () {
               arch: ["x64"]
             }
           ],
-          icon: "src-electron/icons/icon_512x512.png",
+          icon: "src-electron/icons/icon.ico",
           publisherName: "XEQMLabs"
         },
 

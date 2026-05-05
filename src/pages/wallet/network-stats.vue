@@ -142,16 +142,6 @@ export default {
           field: "last_uptime_proof",
           align: "center",
           sortable: true
-        },
-        {
-          name: "public_ip",
-          label: "IP Address",
-          field: row =>
-            row.public_ip
-              ? `${row.public_ip}:${row.storage_port || "N/A"}`
-              : "N/A",
-          align: "left",
-          sortable: false
         }
       ]
     };

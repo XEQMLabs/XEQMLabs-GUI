@@ -39,7 +39,7 @@
                 <q-tooltip>{{ $t("menuItems.rescanWallet") }}</q-tooltip>
               </q-btn>
             </div>
-            <div v-if="balancestakeselector === 'balance' && xeqm_price > 0" class="usd-value">
+            <div v-if="balancestakeselector === 'balance'" class="usd-value">
               <q-icon name="attach_money" size="13px" />{{ usdValue }}
             </div>
           </div>
@@ -48,7 +48,7 @@
               >{{ $t("strings.xeqmUnlockedShort") }}:
               <FormatOxen :amount="info.unlocked_balance"
             /></span>
-            <span v-if="fundsLocked" class="lock-indicator">
+            <span v-if="fundsLocked && lockMessage" class="lock-indicator">
               <q-icon name="lock_clock" size="14px" />
               {{ lockMessage }}
             </span>
@@ -108,10 +108,16 @@ export default {
         state.gateway.wallet.info && state.gateway.wallet.info.name
     }),
     usdValue() {
-      if (this.xeqm_price === null || this.xeqm_price === undefined) return "≈ ---";
-      const xeqm = (this.info?.balance || 0) / 1e4;
-      const usd = xeqm * this.xeqm_price;
-      return `≈ ${usd.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USD`;
+      // XEQM is currently not listed on a public price feed.
+      // Show a placeholder until we relist on CoinGecko (or similar).
+      // When relisted, replace this return with the commented logic below
+      // and re-enable fetchXEQMPrice() in src-electron/main-process/modules/backend.js.
+      return "≈ $-.-- USD";
+
+      // if (this.xeqm_price === null || this.xeqm_price === undefined) return "≈ ---";
+      // const xeqm = (this.info?.balance || 0) / 1e9;
+      // const usd = xeqm * this.xeqm_price;
+      // return `≈ ${usd.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USD`;
     },
     fundsLocked() {
       return (
@@ -119,11 +125,14 @@ export default {
       );
     },
     lockMessage() {
+      // Only display an unlock countdown when the lock is driven by a
+      // recent TX (out/pending/stake within ~10 blocks). Service-node
+      // dereg unlocks can take weeks/months and would otherwise pin the
+      // indicator on indefinitely — so we hide it for those.
       if (!this.fundsLocked) return "";
       const height = this.daemon_height || this.info.height;
-      if (!height) return "Unlocking...";
+      if (!height) return "";
 
-      // Find most recent outgoing/pending TX with < 10 confirmations
       const outTypes = ["out", "pending", "stake"];
       const list = this.tx_list || [];
       const recentLockedTx = list
@@ -134,20 +143,19 @@ export default {
       if (recentLockedTx) {
         const confirmations = Math.max(0, height - recentLockedTx.height);
         const blocksLeft = Math.max(0, 10 - confirmations);
-        if (blocksLeft <= 0) return "Unlocking...";
+        if (blocksLeft <= 0) return "";
         const minsLeft = blocksLeft * 2;
         return `~${blocksLeft} block${
           blocksLeft === 1 ? "" : "s"
         } (~${minsLeft} min)`;
       }
 
-      // Pending TX not yet in a block
       const pendingTx = (this.tx_list || []).find(
         tx => tx && (tx.type === "pending" || tx.type === "pool")
       );
       if (pendingTx) return "Pending confirmation...";
 
-      return "Unlocking...";
+      return "";
     }
   },
   methods: {
