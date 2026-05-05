@@ -112,7 +112,7 @@ export default {
       // Show a placeholder until we relist on CoinGecko (or similar).
       // When relisted, replace this return with the commented logic below
       // and re-enable fetchXEQMPrice() in src-electron/main-process/modules/backend.js.
-      return "≈ $-.-- USD";
+      return "≈ -.-- USD";
 
       // if (this.xeqm_price === null || this.xeqm_price === undefined) return "≈ ---";
       // const xeqm = (this.info?.balance || 0) / 1e9;

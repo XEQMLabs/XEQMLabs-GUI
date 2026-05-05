@@ -280,9 +280,14 @@ export class WalletRPC {
 
         if (!fs.existsSync(rpcPath)) {
           this.backend.sendLog("error", `wallet-rpc NOT FOUND at: ${rpcPath}`);
+          const platformHint = process.platform === "win32"
+            ? "On Windows, antivirus software (especially Windows Defender) sometimes quarantines unsigned binaries. Add the install folder as an antivirus exception and reinstall."
+            : process.platform === "darwin"
+            ? "On macOS, the binary may have been quarantined. Re-download the .dmg and drag XEQM GUI to /Applications. If the issue persists, run 'xattr -cr \"/Applications/XEQM GUI.app\"' in Terminal."
+            : "On Linux, the binary may be missing from the AppImage. Re-download the AppImage and ensure required dependencies are installed (libboost-all-dev libsodium23 libfuse2t64 libzmq5 libzstd1).";
           reject(
             new Error(
-              "Failed to find XEQM Wallet RPC. Please make sure your anti-virus has not removed it."
+              `Wallet RPC binary not found at: ${rpcPath}\n\n${platformHint}`
             )
           );
           return;
@@ -398,6 +403,42 @@ export class WalletRPC {
                   });
                 }
               });
+              // Buffer of recent stderr lines so we can diagnose loader errors
+              // (missing OS deps) when the process exits.
+              const stderrTail = [];
+              const STDERR_TAIL_LIMIT = 50;
+
+              // Patterns that indicate missing dynamic-linker dependencies on
+              // each platform. When any of these show up, the binary itself
+              // couldn't even start — usually because the user skipped the
+              // platform's dependency-install step.
+              const isMissingDepLine = (line) => {
+                const l = line.toLowerCase();
+                return (
+                  l.includes("library not loaded") ||             // macOS dyld
+                  l.includes("symbol not found") ||               // macOS dyld (newer)
+                  l.includes("image not found") ||                // macOS dyld (older)
+                  l.includes("cannot open shared object") ||      // Linux ld.so
+                  l.includes("error while loading shared libraries") ||  // Linux
+                  l.includes("no such file or directory") && l.includes(".so") ||
+                  /the code execution cannot proceed.*\.dll/i.test(line)  // Windows
+                );
+              };
+
+              const buildDepHelpMessage = () => {
+                const platform = process.platform;
+                if (platform === "darwin") {
+                  return "Wallet binary failed to launch — a required system library is missing. macOS bundles all required libraries inside the .app, so this usually means the .app was not installed correctly. Re-download the .dmg and drag XEQM GUI to /Applications. If the problem persists, run 'xattr -cr \"/Applications/XEQM GUI.app\"' in Terminal and try again.";
+                }
+                if (platform === "linux") {
+                  return "Wallet binary failed to launch — required system libraries are missing. Install the dependencies first:\n\n  sudo apt-get install -y libboost-all-dev libsodium23 libfuse2t64 libzmq5 libzstd1\n\n(On Ubuntu 22.04 or older, use libfuse2 instead of libfuse2t64.) See the Releases page for full instructions.";
+                }
+                if (platform === "win32") {
+                  return "Wallet binary failed to launch — a required Windows DLL could not be found. This usually means antivirus removed a file from the install folder, or the installer was interrupted. Reinstall from the official .exe and add an antivirus exception for the install folder.";
+                }
+                return "Wallet binary failed to launch — required system libraries are missing. Check the Releases page for dependency install instructions for your OS.";
+              };
+
               this.walletRPCProcess.on("error", err => {
                 process.stderr.write(`Wallet: ${err}`);
                 this.backend.sendLog(
@@ -414,6 +455,14 @@ export class WalletRPC {
                 this.backend.sendLog("warn", exitMsg);
                 this.walletRPCProcess = null;
                 this.agent.destroy();
+
+                // If we caught a loader error in stderr, surface a helpful
+                // dependency-install message instead of the generic one.
+                const sawDepError = stderrTail.some(isMissingDepLine);
+                if (sawDepError) {
+                  reject(new Error(buildDepHelpMessage()));
+                  return;
+                }
                 if (code === null) {
                   reject(new Error("Failed to start wallet RPC"));
                 }
@@ -423,7 +472,11 @@ export class WalletRPC {
                   const lines = String(data).split("\n");
                   for (const line of lines) {
                     const trimmed = line.trim();
-                    if (trimmed) this.backend.sendLog("error", `[wallet-rpc stderr] ${trimmed}`);
+                    if (trimmed) {
+                      this.backend.sendLog("error", `[wallet-rpc stderr] ${trimmed}`);
+                      stderrTail.push(trimmed);
+                      if (stderrTail.length > STDERR_TAIL_LIMIT) stderrTail.shift();
+                    }
                   }
                 });
               }

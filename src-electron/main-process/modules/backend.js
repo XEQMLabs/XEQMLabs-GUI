@@ -783,10 +783,15 @@ export class Backend {
           const wMsg = walletError && walletError.message ? walletError.message : String(walletError || "unknown");
           const rpcPort = this.config_data.wallet.rpc_bind_port || 22026;
           this.sendLog("error", `Wallet RPC failed (${net_type}, port ${rpcPort}): ${wMsg}`);
+
+          // Detailed dependency-error messages need much longer to read than a
+          // generic toast. Heuristic: anything multi-line or > 100 chars is
+          // an actionable error worth keeping on screen.
+          const isLongMessage = wMsg.includes("\n") || wMsg.length > 100;
           this.send("show_notification", {
             type: "negative",
             message: `Could not start wallet: ${wMsg}`,
-            timeout: 5000
+            timeout: isLongMessage ? 0 : 5000
           });
           this.send("set_app_data", { status: { code: -1 } });
         });
@@ -808,10 +813,15 @@ export class Backend {
         this.sendLog("info", `Daemon version: ${version}`);
       } else {
         this.sendLog("warn", `Daemon binary not found (network: ${net_type})`);
+        const platformHint = process.platform === "win32"
+          ? "On Windows, antivirus software sometimes quarantines unsigned binaries. Add the install folder as an antivirus exception and reinstall."
+          : process.platform === "darwin"
+          ? "On macOS, re-download the .dmg and drag XEQM GUI to /Applications. If the issue persists, run 'xattr -cr \"/Applications/XEQM GUI.app\"' in Terminal."
+          : "On Linux, install dependencies first and ensure the AppImage is intact:\n  sudo apt-get install -y libboost-all-dev libsodium23 libfuse2t64 libzmq5 libzstd1";
         this.send("show_notification", {
           type: "negative",
-          message: "Daemon binary not found. Please check your installation.",
-          timeout: 5000
+          message: `Daemon binary not found or could not launch.\n\n${platformHint}`,
+          timeout: 0
         });
         this.send("set_app_data", {
           daemon_connecting: false,
