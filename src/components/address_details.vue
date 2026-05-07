@@ -35,7 +35,7 @@
                 <div class="infoBox">
                   <div class="infoBoxContent">
                     <div class="text">
-                      <span>{{ $t("strings.xeqBalance") }}</span>
+                      <span>{{ $t("strings.xeqmBalance") }}</span>
                     </div>
                     <div class="value">
                       <span><FormatOxen :amount="address.balance"/></span>
@@ -46,7 +46,7 @@
                 <div class="infoBox">
                   <div class="infoBoxContent">
                     <div class="text">
-                      <span>{{ $t("strings.xeqUnlockedBalance") }}</span>
+                      <span>{{ $t("strings.xeqmUnlockedBalance") }}</span>
                     </div>
                     <div class="value">
                       <span
@@ -73,7 +73,7 @@
                 <div class="infoBox">
                   <div class="infoBoxContent">
                     <div class="text">
-                      <span>{{ $t("strings.xeqBalance") }}</span>
+                      <span>{{ $t("strings.xeqmBalance") }}</span>
                     </div>
                     <div class="value"><span>N/A</span></div>
                   </div>
@@ -82,7 +82,7 @@
                 <div class="infoBox">
                   <div class="infoBoxContent">
                     <div class="text">
-                      <span>{{ $t("strings.xeqUnlockedBalance") }}</span>
+                      <span>{{ $t("strings.xeqmUnlockedBalance") }}</span>
                     </div>
                     <div class="value"><span>N/A</span></div>
                   </div>

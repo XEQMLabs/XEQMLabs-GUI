@@ -42,12 +42,12 @@
         <q-item-section>
           <div class="row info-section">
             <span class="col-sm-4">
-              <span>{{ $t("strings.xeqBalance") }}</span>
+              <span>{{ $t("strings.xeqmBalance") }}</span>
               <br />
               <span class="value">{{ formatCurrency(address.balance) }}</span>
             </span>
             <span class="col-sm-4">
-              <span>{{ $t("strings.xeqUnlockedBalance") }}</span>
+              <span>{{ $t("strings.xeqmUnlockedBalance") }}</span>
               <br />
               <span class="value">{{ formatCurrency(address.unlocked_balance) }}</span>
             </span>

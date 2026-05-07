@@ -164,6 +164,7 @@
               >
                 <q-item-section>
                   <q-item-label>{{ option.host }}:{{ option.port }}</q-item-label>
+                  <q-item-label v-if="option.region" caption>{{ option.region }}</q-item-label>
                 </q-item-section>
               </q-item>
             </q-list>

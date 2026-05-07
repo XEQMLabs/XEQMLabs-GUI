@@ -86,7 +86,10 @@ export class Backend {
     const daemons = {
       mainnet: {
         ...daemon,
-        type: "local",
+        // Default to a public remote so first-launch users get a working
+        // wallet without running their own daemon. The actual host is
+        // auto-picked at connect time from this.remotes when blank.
+        type: "remote",
         remote_host: "",
         remote_port: 9231
       },
@@ -132,8 +135,14 @@ export class Backend {
       }
     };
 
-    // XEQM mainnet remote nodes — none available yet
-    this.remotes = [];
+    // XEQM mainnet remote nodes (auto-picked round-robin if user hasn't chosen one)
+    this.remotes = [
+      { host: "pn-1.xeqmlabs.com", port: 9231, region: "US Central" },
+      { host: "pn-2.xeqmlabs.com", port: 9231, region: "US Central" },
+      { host: "pn-3.xeqmlabs.com", port: 9231, region: "EU" },
+      { host: "pn-4.xeqmlabs.com", port: 9231, region: "EU" },
+      { host: "pn-5.xeqmlabs.com", port: 9231, region: "Sydney" }
+    ];
 
     this.token = config.token;
 
@@ -769,7 +778,35 @@ export class Backend {
             2 * 60 * 1000
           );
 
-          {
+          // Auto-connect to a remote node on wallet load when the user has
+          // chosen "remote" daemon type. If no specific host is set yet
+          // (first launch, or saved config has blank host), pick one of the
+          // configured presets at random.
+          const dmnCfg = this.config_data.daemons[net_type];
+          if (
+            dmnCfg &&
+            dmnCfg.type === "remote" &&
+            this.remotes &&
+            this.remotes.length > 0
+          ) {
+            if (!dmnCfg.remote_host) {
+              const pick = this.remotes[Math.floor(Math.random() * this.remotes.length)];
+              dmnCfg.remote_host = pick.host;
+              dmnCfg.remote_port = pick.port;
+              this.sendLog(
+                "info",
+                `Auto-selected remote node: ${pick.host}:${pick.port} (${pick.region})`
+              );
+            }
+            this.send("show_notification", {
+              type: "info",
+              color: "cyan",
+              textColor: "dark",
+              message: `Connecting to remote node ${dmnCfg.remote_host}...`,
+              timeout: 4000
+            });
+            this.connectDaemon();
+          } else {
             this.send("show_notification", {
               type: "info",
               color: "cyan",

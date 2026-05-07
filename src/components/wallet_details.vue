@@ -144,7 +144,8 @@ export default {
         const confirmations = Math.max(0, height - recentLockedTx.height);
         const blocksLeft = Math.max(0, 10 - confirmations);
         if (blocksLeft <= 0) return "";
-        const minsLeft = blocksLeft * 2;
+        // XEQM mainnet target block time is 1 minute
+        const minsLeft = blocksLeft;
         return `~${blocksLeft} block${
           blocksLeft === 1 ? "" : "s"
         } (~${minsLeft} min)`;
