@@ -309,11 +309,17 @@ export class WalletRPC {
           .then(status => {
             if (status === "closed") {
               const pathSep = process.platform === "win32" ? ";" : ":";
+              // On Windows: detached + windowsHide gives the child its own
+              // hidden console session. Without this, wallet-rpc dies silently
+              // on some user machines (Win10, no obvious AV/policy cause).
+              // The console is hidden so users don't see a flashing window.
               const spawnOptions =
                 process.platform === "win32"
                   ? {
                       cwd: binPath,
-                      env: { ...process.env, PATH: `${binPath}${pathSep}${process.env.PATH}` }
+                      env: { ...process.env, PATH: `${binPath}${pathSep}${process.env.PATH}` },
+                      detached: true,
+                      windowsHide: true
                     }
                   : {
                       detached: true,
@@ -3214,7 +3220,10 @@ export class WalletRPC {
 
     // Step 5: Start fresh wallet-rpc process
     try {
-      const spawnOptions = process.platform === "win32" ? {} : { detached: true };
+      const spawnOptions =
+        process.platform === "win32"
+          ? { detached: true, windowsHide: true }
+          : { detached: true };
       this.walletRPCProcess = child_process.spawn(rpcPath, rpcArgs, spawnOptions);
 
       this.walletRPCProcess.stdout.on("data", data => {

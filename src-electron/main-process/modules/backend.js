@@ -760,6 +760,38 @@ export class Backend {
         daemon_connected: false
       });
 
+      // BEFORE starting wallet-rpc: if user is set to remote daemon but
+      // hasn't chosen a host yet (first launch or stale config), pick one
+      // of our public presets so wallet-rpc gets a valid daemon address.
+      // Without this, wallet-rpc would be launched with --daemon-address
+      // ":9231" (empty host) and die at startup.
+      {
+        const _dmnPreCfg = this.config_data.daemons[net_type];
+        if (
+          _dmnPreCfg &&
+          _dmnPreCfg.type === "remote" &&
+          !_dmnPreCfg.remote_host &&
+          this.remotes &&
+          this.remotes.length > 0
+        ) {
+          const pick = this.remotes[Math.floor(Math.random() * this.remotes.length)];
+          _dmnPreCfg.remote_host = pick.host;
+          _dmnPreCfg.remote_port = pick.port;
+          this.sendLog(
+            "info",
+            `Auto-selected remote node before wallet-rpc start: ${pick.host}:${pick.port} (${pick.region})`
+          );
+          // Persist so we stick to the same node on next launch
+          try {
+            const toWrite = objectAssignDeep.noMutate({}, this.config_data);
+            if (toWrite.app && "wallets_backup_path" in toWrite.app) delete toWrite.app.wallets_backup_path;
+            fs.writeFileSync(this.config_file, JSON.stringify(toWrite, null, 4), "utf8");
+          } catch (err) {
+            this.sendLog("warn", `Could not persist auto-picked remote: ${err.message}`);
+          }
+        }
+      }
+
       // Start wallet-rpc first
       this.walletd
         .start(this.config_data)
