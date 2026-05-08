@@ -43,7 +43,10 @@ No additional dependencies required — the installer is self-contained.
      libsodium23 \
      libfuse2t64 \
      libzmq5 \
-     libzstd1
+     libzstd1 \
+     libhidapi-libusb0 \
+     libhidapi-hidraw0 \
+     libusb-1.0-0
    ```
 
    On older Ubuntu (22.04 and below), use `libfuse2` instead of `libfuse2t64`.

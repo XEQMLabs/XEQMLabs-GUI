@@ -515,14 +515,42 @@ export class Backend {
   }
 
   initLogger(logPath) {
+    const logFile = path.join(logPath, "electron.log");
+    // Hard cap on individual log file size. Bunyan's rotating-file only
+    // rotates by time, so a tight crash loop (e.g., process repeatedly
+    // failing to spawn) can write GBs/hour and fill the user's disk
+    // before the daily rotation fires. We enforce a ceiling at startup
+    // and again periodically while running.
+    const MAX_LOG_SIZE = 100 * 1024 * 1024; // 100 MB
+
+    // 1. Startup safety net: if the existing log file is already over
+    //    the cap (e.g., user previously hit a crash loop), wipe it
+    //    before bunyan opens it. Saves the user's disk on relaunch.
+    try {
+      if (fs.existsSync(logFile)) {
+        const stats = fs.statSync(logFile);
+        if (stats.size > MAX_LOG_SIZE) {
+          console.warn(
+            `[Backend] electron.log was ${stats.size} bytes (> ${MAX_LOG_SIZE}); deleting to prevent disk-fill.`
+          );
+          fs.unlinkSync(logFile);
+        }
+      }
+    } catch (e) {
+      console.warn("[Backend] Could not check/clear oversized log file:", e.message);
+    }
+
     let log = bunyan.createLogger({
       name: "log",
       streams: [
         {
           type: "rotating-file",
-          path: path.join(logPath, "electron.log"),
-          period: "1d", // daily rotation
-          count: 4 // keep 4 days of logs
+          path: logFile,
+          // Hourly rotation (was daily) — limits the per-file growth
+          // window from 24h to 1h in case a crash loop slips past the
+          // size guard below.
+          period: "1h",
+          count: 24 // keep 24 hours of rotated logs
         }
       ]
     });
@@ -534,6 +562,28 @@ export class Backend {
     });
 
     this.log = log;
+
+    // 2. Runtime guard: every 5 minutes, check the active log size.
+    //    If it's somehow exceeded the cap mid-session (crash loop spamming
+    //    error events), truncate to zero and log the action. Truncation
+    //    while bunyan has the file open is safe on POSIX/Win32 — bunyan's
+    //    next write resumes at offset 0.
+    if (this._logSizeGuardInterval) clearInterval(this._logSizeGuardInterval);
+    this._logSizeGuardInterval = setInterval(() => {
+      try {
+        if (fs.existsSync(logFile)) {
+          const stats = fs.statSync(logFile);
+          if (stats.size > MAX_LOG_SIZE) {
+            fs.truncateSync(logFile, 0);
+            log.warn(
+              `Log file exceeded ${MAX_LOG_SIZE} bytes; truncated to prevent disk-fill.`
+            );
+          }
+        }
+      } catch (e) {
+        // Don't let logging-about-logging cascade into more problems
+      }
+    }, 5 * 60 * 1000);
 
     process.on("uncaughtException", error => {
       log.error("Unhandled Error", error);
@@ -792,9 +842,31 @@ export class Backend {
         }
       }
 
-      // Start wallet-rpc first
-      this.walletd
-        .start(this.config_data)
+      // For type=local: start the daemon BEFORE wallet-rpc. The current
+      // wallet-rpc binary (XEQMLabs Ragnarok v23.0.0+) dies on some Windows
+      // machines when launched with --daemon-address pointing to a not-yet-
+      // running local daemon. Pre-launching ensures the daemon is reachable
+      // by the time wallet-rpc tries to connect.
+      const _localDaemonReady = (() => {
+        const dmnCfg = this.config_data.daemons[net_type];
+        if (dmnCfg && dmnCfg.type === "local") {
+          this.sendLog("info", "Starting local daemon before wallet-rpc...");
+          return this.daemon.start(this.config_data)
+            .then(() => {
+              this.sendLog("info", "Local daemon launched, proceeding to wallet-rpc.");
+            })
+            .catch(err => {
+              const msg = err && err.message ? err.message : String(err);
+              this.sendLog("warn", `Local daemon pre-launch had issues: ${msg}`);
+              // Continue anyway — wallet-rpc may still surface the actual issue
+            });
+        }
+        return Promise.resolve();
+      })();
+
+      // Start wallet-rpc AFTER the local daemon is up (or immediately for remote)
+      _localDaemonReady
+        .then(() => this.walletd.start(this.config_data))
         .then(() => {
           this.send("set_app_data", { status: { code: 7 } }); // Reading wallet list
           this.walletd.listWallets();
@@ -810,31 +882,21 @@ export class Backend {
             2 * 60 * 1000
           );
 
-          // Auto-connect to a remote node on wallet load when the user has
-          // chosen "remote" daemon type. If no specific host is set yet
-          // (first launch, or saved config has blank host), pick one of the
-          // configured presets at random.
+          // Auto-connect to the daemon on wallet load. For type=local the
+          // daemon was already pre-launched above, so connectDaemon() just
+          // verifies and updates the UI to "connected". For type=remote
+          // we use the host that was either user-saved or auto-picked
+          // earlier (pre-walletd-start auto-pick handles empty host case).
           const dmnCfg = this.config_data.daemons[net_type];
-          if (
-            dmnCfg &&
-            dmnCfg.type === "remote" &&
-            this.remotes &&
-            this.remotes.length > 0
-          ) {
-            if (!dmnCfg.remote_host) {
-              const pick = this.remotes[Math.floor(Math.random() * this.remotes.length)];
-              dmnCfg.remote_host = pick.host;
-              dmnCfg.remote_port = pick.port;
-              this.sendLog(
-                "info",
-                `Auto-selected remote node: ${pick.host}:${pick.port} (${pick.region})`
-              );
-            }
+          if (dmnCfg && (dmnCfg.type === "remote" || dmnCfg.type === "local")) {
+            const target = dmnCfg.type === "remote"
+              ? `remote node ${dmnCfg.remote_host}`
+              : "local daemon";
             this.send("show_notification", {
               type: "info",
               color: "cyan",
               textColor: "dark",
-              message: `Connecting to remote node ${dmnCfg.remote_host}...`,
+              message: `Connecting to ${target}...`,
               timeout: 4000
             });
             this.connectDaemon();
@@ -886,7 +948,7 @@ export class Backend {
           ? "On Windows, antivirus software sometimes quarantines unsigned binaries. Add the install folder as an antivirus exception and reinstall."
           : process.platform === "darwin"
           ? "On macOS, re-download the .dmg and drag XEQM GUI to /Applications. If the issue persists, run 'xattr -cr \"/Applications/XEQM GUI.app\"' in Terminal."
-          : "On Linux, install dependencies first and ensure the AppImage is intact:\n  sudo apt-get install -y libboost-all-dev libsodium23 libfuse2t64 libzmq5 libzstd1";
+          : "On Linux, install dependencies first and ensure the AppImage is intact:\n  sudo apt-get install -y libboost-all-dev libsodium23 libfuse2t64 libzmq5 libzstd1 libhidapi-libusb0 libhidapi-hidraw0 libusb-1.0-0";
         this.send("show_notification", {
           type: "negative",
           message: `Daemon binary not found or could not launch.\n\n${platformHint}`,

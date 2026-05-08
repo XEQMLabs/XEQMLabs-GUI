@@ -125,7 +125,7 @@ export default configure(function () {
         appId: "com.xeqmlabs.xeqm-wallet",
         productName: "XEQM GUI",
         copyright: "Copyright © 2026 XEQMLabs",
-        artifactName: "XEQM-GUI-${version}-${os}-${arch}.${ext}",
+        artifactName: "XEQM-GUI-${version}-${os}.${ext}",
 
         win: {
           target: [

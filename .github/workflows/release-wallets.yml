@@ -353,7 +353,7 @@ jobs:
             2. Install runtime dependencies (one-time):
                ```bash
                sudo apt-get update
-               sudo apt-get install -y libboost-all-dev libsodium23 libfuse2t64 libzmq5 libzstd1
+               sudo apt-get install -y libboost-all-dev libsodium23 libfuse2t64 libzmq5 libzstd1 libhidapi-libusb0 libhidapi-hidraw0 libusb-1.0-0
                ```
                On Ubuntu 22.04 and below, use `libfuse2` instead of `libfuse2t64`.
             3. Make the AppImage executable and run it:

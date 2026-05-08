@@ -284,7 +284,7 @@ export class WalletRPC {
             ? "On Windows, antivirus software (especially Windows Defender) sometimes quarantines unsigned binaries. Add the install folder as an antivirus exception and reinstall."
             : process.platform === "darwin"
             ? "On macOS, the binary may have been quarantined. Re-download the .dmg and drag XEQM GUI to /Applications. If the issue persists, run 'xattr -cr \"/Applications/XEQM GUI.app\"' in Terminal."
-            : "On Linux, the binary may be missing from the AppImage. Re-download the AppImage and ensure required dependencies are installed (libboost-all-dev libsodium23 libfuse2t64 libzmq5 libzstd1).";
+            : "On Linux, the binary may be missing from the AppImage. Re-download the AppImage and ensure required dependencies are installed (libboost-all-dev libsodium23 libfuse2t64 libzmq5 libzstd1 libhidapi-libusb0 libhidapi-hidraw0 libusb-1.0-0).";
           reject(
             new Error(
               `Wallet RPC binary not found at: ${rpcPath}\n\n${platformHint}`
@@ -437,7 +437,7 @@ export class WalletRPC {
                   return "Wallet binary failed to launch — a required system library is missing. macOS bundles all required libraries inside the .app, so this usually means the .app was not installed correctly. Re-download the .dmg and drag XEQM GUI to /Applications. If the problem persists, run 'xattr -cr \"/Applications/XEQM GUI.app\"' in Terminal and try again.";
                 }
                 if (platform === "linux") {
-                  return "Wallet binary failed to launch — required system libraries are missing. Install the dependencies first:\n\n  sudo apt-get install -y libboost-all-dev libsodium23 libfuse2t64 libzmq5 libzstd1\n\n(On Ubuntu 22.04 or older, use libfuse2 instead of libfuse2t64.) See the Releases page for full instructions.";
+                  return "Wallet binary failed to launch — required system libraries are missing. Install the dependencies first:\n\n  sudo apt-get install -y libboost-all-dev libsodium23 libfuse2t64 libzmq5 libzstd1 libhidapi-libusb0 libhidapi-hidraw0 libusb-1.0-0\n\n(On Ubuntu 22.04 or older, use libfuse2 instead of libfuse2t64.) See the Releases page for full instructions.";
                 }
                 if (platform === "win32") {
                   return "Wallet binary failed to launch — a required Windows DLL could not be found. This usually means antivirus removed a file from the install folder, or the installer was interrupted. Reinstall from the official .exe and add an antivirus exception for the install folder.";
