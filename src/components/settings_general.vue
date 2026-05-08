@@ -595,7 +595,8 @@ export default {
         // Save config and restart
         this.$gateway.send("core", "quick_save_config", {
           app: this.config.app,
-          daemons: this.config.daemons
+          daemons: this.config.daemons,
+          wallet: this.config.wallet
         });
         // Trigger restart after a short delay to allow config to save
         setTimeout(() => {
@@ -636,7 +637,8 @@ export default {
       // Save config first, then connect
       this.$gateway.send("core", "quick_save_config", {
         app: this.config.app,
-        daemons: this.config.daemons
+        daemons: this.config.daemons,
+        wallet: this.config.wallet
       });
       this.$gateway.send("core", "connect_daemon");
     },

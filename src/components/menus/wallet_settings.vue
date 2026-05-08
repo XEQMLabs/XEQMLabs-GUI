@@ -566,7 +566,8 @@ export default {
         if (this.config && this.config.app && this.config.daemons) {
           this.$gateway.send("core", "quick_save_config", {
             app: this.config.app,
-            daemons: this.config.daemons
+            daemons: this.config.daemons,
+            wallet: this.config.wallet
           });
         }
         this.$gateway.send("core", "connect_daemon");
