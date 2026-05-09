@@ -89,9 +89,12 @@ export class Backend {
         // Default to a public remote so first-launch users get a working
         // wallet without running their own daemon. The actual host is
         // auto-picked at connect time from this.remotes when blank.
+        // Port 9232 = public restricted RPC (--rpc-public). Port 9231
+        // is the admin RPC and is intentionally localhost-only on the
+        // public nodes — do NOT use it remotely.
         type: "remote",
         remote_host: "",
-        remote_port: 9231
+        remote_port: 9232
       },
       stagenet: {
         ...daemon,
@@ -136,12 +139,18 @@ export class Backend {
     };
 
     // XEQM mainnet remote nodes (auto-picked round-robin if user hasn't chosen one)
+    // Public node convention:
+    //   9230 = p2p
+    //   9231 = admin RPC (localhost-only on operators' boxes; intentionally
+    //          firewalled in public, so do NOT connect to this remotely)
+    //   9232 = public restricted RPC (--rpc-public, what wallets use)
+    //   9233 = OxenMQ
     this.remotes = [
-      { host: "pn-1.xeqmlabs.com", port: 9231, region: "US Central" },
-      { host: "pn-2.xeqmlabs.com", port: 9231, region: "US Central" },
-      { host: "pn-3.xeqmlabs.com", port: 9231, region: "EU" },
-      { host: "pn-4.xeqmlabs.com", port: 9231, region: "EU" },
-      { host: "pn-5.xeqmlabs.com", port: 9231, region: "Sydney" }
+      { host: "pn-1.xeqmlabs.com", port: 9232, region: "US Central" },
+      { host: "pn-2.xeqmlabs.com", port: 9232, region: "US Central" },
+      { host: "pn-3.xeqmlabs.com", port: 9232, region: "EU" },
+      { host: "pn-4.xeqmlabs.com", port: 9232, region: "EU" },
+      { host: "pn-5.xeqmlabs.com", port: 9232, region: "Sydney" }
     ];
 
     this.token = config.token;
@@ -809,6 +818,36 @@ export class Backend {
         },
         daemon_connected: false
       });
+
+      // MIGRATION: v2.0.9-v2.0.11 used port 9231 as the default for remote
+      // nodes, but public nodes serve wallet RPC on 9232 (9231 is admin-only
+      // and intentionally firewalled). Auto-correct configs from those
+      // versions when the host matches one of our known presets, so users
+      // don't have to manually edit config.json.
+      {
+        const _dmn = this.config_data.daemons[net_type];
+        if (
+          _dmn &&
+          _dmn.type === "remote" &&
+          _dmn.remote_port === 9231 &&
+          this.remotes &&
+          this.remotes.some(r => r.host === _dmn.remote_host)
+        ) {
+          this.sendLog(
+            "info",
+            `Migrating remote port 9231 → 9232 for ${_dmn.remote_host} (admin RPC was firewalled; public RPC is on 9232)`
+          );
+          _dmn.remote_port = 9232;
+          // Persist so next launch uses the corrected port
+          try {
+            const toWrite = objectAssignDeep.noMutate({}, this.config_data);
+            if (toWrite.app && "wallets_backup_path" in toWrite.app) delete toWrite.app.wallets_backup_path;
+            fs.writeFileSync(this.config_file, JSON.stringify(toWrite, null, 4), "utf8");
+          } catch (err) {
+            this.sendLog("warn", `Could not persist port migration: ${err.message}`);
+          }
+        }
+      }
 
       // BEFORE starting wallet-rpc: if user is set to remote daemon but
       // hasn't chosen a host yet (first launch or stale config), pick one
