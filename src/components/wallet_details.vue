@@ -40,7 +40,9 @@
               </q-btn>
             </div>
             <div v-if="balancestakeselector === 'balance'" class="usd-value">
-              <q-icon name="attach_money" size="13px" />{{ usdValue }}
+              <span>{{ pricePerXEQM }}</span>
+              <span class="separator">·</span>
+              <span>{{ totalUsdValue }}</span>
             </div>
           </div>
           <div v-if="balancestakeselector != 'stake'" class="row unlocked">
@@ -107,17 +109,30 @@ export default {
       is_wallet_open: state =>
         state.gateway.wallet.info && state.gateway.wallet.info.name
     }),
-    usdValue() {
-      // XEQM is currently not listed on a public price feed.
-      // Show a placeholder until we relist on CoinGecko (or similar).
-      // When relisted, replace this return with the commented logic below
-      // and re-enable fetchXEQMPrice() in src-electron/main-process/modules/backend.js.
-      return "≈ -.-- USD";
-
-      // if (this.xeqm_price === null || this.xeqm_price === undefined) return "≈ ---";
-      // const xeqm = (this.info?.balance || 0) / 1e9;
-      // const usd = xeqm * this.xeqm_price;
-      // return `≈ ${usd.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USD`;
+    pricePerXEQM() {
+      if (this.xeqm_price === null || this.xeqm_price === undefined) {
+        return "1 XEQM ≈ $-.-- USD";
+      }
+      // Sub-cent prices need extra precision; round normally otherwise.
+      const min = this.xeqm_price < 0.01 ? 6 : 4;
+      const max = this.xeqm_price < 0.01 ? 8 : 4;
+      const price = this.xeqm_price.toLocaleString("en-US", {
+        minimumFractionDigits: min,
+        maximumFractionDigits: max
+      });
+      return `1 XEQM ≈ $${price} USD`;
+    },
+    totalUsdValue() {
+      if (this.xeqm_price === null || this.xeqm_price === undefined) {
+        return "Total ≈ $-.-- USD";
+      }
+      const xeqm = (this.info?.balance || 0) / 1e9;
+      const usd = xeqm * this.xeqm_price;
+      const total = usd.toLocaleString("en-US", {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2
+      });
+      return `Total ≈ $${total} USD`;
     },
     fundsLocked() {
       return (
@@ -219,6 +234,11 @@ export default {
         color: rgba(0, 212, 255, 0.65);
         margin-top: 2px;
         letter-spacing: 0.02em;
+
+        .separator {
+          margin: 0 8px;
+          color: rgba(0, 212, 255, 0.35);
+        }
       }
       .text {
         font-size: 16px;

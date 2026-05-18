@@ -435,37 +435,34 @@ export class Backend {
    * 10s timeout. No wallet data is sent in the request.
    */
   fetchXEQMPrice() {
-    // No-op: XEQM is not currently listed on a public price feed.
-    // The wallet UI shows a "$-.-- USD" placeholder until we relist.
-    // When relisted (e.g., on CoinGecko under a new ID), uncomment the
-    // body below and update PRICE_URL + the data?.<id>?.usd accessor.
-    //
-    // const PRICE_URL =
-    //   "https://api.coingecko.com/api/v3/simple/price?ids=triton&vs_currencies=usd";
-    // fetch(PRICE_URL, {
-    //   method: "GET",
-    //   headers: { Accept: "application/json" },
-    //   signal: AbortSignal.timeout(10000)
-    // })
-    //   .then(res => {
-    //     if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    //     return res.json();
-    //   })
-    //   .then(data => {
-    //     const price = data?.triton?.usd;
-    //     if (
-    //       typeof price !== "number" ||
-    //       !Number.isFinite(price) ||
-    //       price < 0 ||
-    //       price > 1_000_000
-    //     ) {
-    //       throw new Error("Unexpected price response");
-    //     }
-    //     this.send("set_app_data", { xeqm_price: price });
-    //   })
-    //   .catch(() => {
-    //     this.send("set_app_data", { xeqm_price: null });
-    //   });
+    // CoinGecko listing: https://www.coingecko.com/en/coins/xeqm-labs
+    // API id: xeqm-labs
+    const PRICE_URL =
+      "https://api.coingecko.com/api/v3/simple/price?ids=xeqm-labs&vs_currencies=usd";
+    fetch(PRICE_URL, {
+      method: "GET",
+      headers: { Accept: "application/json" },
+      signal: AbortSignal.timeout(10000)
+    })
+      .then(res => {
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        return res.json();
+      })
+      .then(data => {
+        const price = data?.["xeqm-labs"]?.usd;
+        if (
+          typeof price !== "number" ||
+          !Number.isFinite(price) ||
+          price < 0 ||
+          price > 1_000_000
+        ) {
+          throw new Error("Unexpected price response");
+        }
+        this.send("set_app_data", { xeqm_price: price });
+      })
+      .catch(() => {
+        this.send("set_app_data", { xeqm_price: null });
+      });
   }
 
   /**

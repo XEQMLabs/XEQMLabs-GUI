@@ -303,11 +303,36 @@ export class WalletRPC {
         this.backend.sendLog("info", `[${net_type}] Wallet RPC: wallet_dir=${this.wallet_dir}, log_file=${log_file}`);
         this.backend.sendLog("info", `[${net_type}] Wallet RPC: daemon_address=${daemon_address}, rpc_bind=127.0.0.1:${options.wallet.rpc_bind_port}`);
 
-        portscanner
-          .checkPortStatus(this.port, this.hostname)
-          .catch(() => "closed")
-          .then(status => {
-            if (status === "closed") {
+        const tryStartWalletRPC = (status, alreadySwept) => {
+          if (status !== "closed" && !alreadySwept) {
+            // Port is in use. Most common cause: an orphaned xeqm-rpc.exe
+            // from a previous GUI launch (Windows `detached: true` spawn
+            // outlives the parent on hard exits / Task Manager kills).
+            // Try to identify and kill ours, then retry the bind once.
+            this.backend.sendLog(
+              "info",
+              `[${net_type}] Port ${this.port} occupied; checking for orphaned xeqm-rpc...`
+            );
+            return this.killStaleWalletRPC(this.port)
+              .then(killed => {
+                if (!killed) {
+                  // Port is held by something that isn't ours — don't touch it.
+                  this.backend.sendLog(
+                    "warn",
+                    `[${net_type}] Port ${this.port} is held by a non-xeqm-rpc process; refusing to kill`
+                  );
+                  reject(new Error(`Wallet RPC port ${this.port} is in use`));
+                  return;
+                }
+                // Re-check after the kill, then proceed (alreadySwept=true so
+                // we don't loop forever if the kill silently failed).
+                return portscanner
+                  .checkPortStatus(this.port, this.hostname)
+                  .catch(() => "closed")
+                  .then(s2 => tryStartWalletRPC(s2, true));
+              });
+          }
+          if (status === "closed") {
               const pathSep = process.platform === "win32" ? ";" : ":";
               // On Windows: detached + windowsHide gives the child its own
               // hidden console session. Without this, wallet-rpc dies silently
@@ -524,11 +549,114 @@ export class WalletRPC {
                 });
               }, 1000);
             } else {
-              this.backend.sendLog("warn", `[${net_type}] Wallet RPC port ${this.port} is in use; cannot start`);
+              this.backend.sendLog(
+                "warn",
+                `[${net_type}] Wallet RPC port ${this.port} is still in use after stale-process sweep; cannot start`
+              );
               reject(new Error(`Wallet RPC port ${this.port} is in use`));
             }
-          });
+          };
+
+        portscanner
+          .checkPortStatus(this.port, this.hostname)
+          .catch(() => "closed")
+          .then(status => tryStartWalletRPC(status, false));
       });
+    });
+  }
+
+  // Find any process listening on `port` and, if it's an xeqm-rpc binary
+  // (orphaned from a previous launch), force-kill it. Returns a promise
+  // resolving to true if a kill was issued, false otherwise.
+  //
+  // We deliberately verify the image name before killing — port 22026 is
+  // not registered, so a careless `taskkill` could murder some unrelated
+  // user app that happens to bind there.
+  killStaleWalletRPC(port) {
+    return new Promise(resolve => {
+      const finish = killed => resolve(killed);
+
+      if (process.platform === "win32") {
+        // Step 1: find PID via netstat
+        child_process.exec(
+          `netstat -ano -p TCP | findstr LISTENING | findstr :${port}`,
+          (err, stdout) => {
+            if (err || !stdout) return finish(false);
+            // Parse PIDs (last column); the same port may show up for both
+            // IPv4 and IPv6 loopback — try all unique PIDs.
+            const pids = Array.from(
+              new Set(
+                stdout
+                  .split(/\r?\n/)
+                  .map(l => l.trim().split(/\s+/).pop())
+                  .filter(p => /^\d+$/.test(p))
+              )
+            );
+            if (pids.length === 0) return finish(false);
+
+            // Step 2: verify image name with tasklist (CSV) — only kill
+            // if it's our xeqm-rpc.exe binary.
+            let pending = pids.length;
+            let anyKilled = false;
+            for (const pid of pids) {
+              child_process.exec(
+                `tasklist /FI "PID eq ${pid}" /FO CSV /NH`,
+                (e2, out2) => {
+                  pending--;
+                  if (!e2 && out2 && /xeqm-rpc(\.exe)?/i.test(out2)) {
+                    this.backend.sendLog(
+                      "warn",
+                      `Killing orphaned xeqm-rpc.exe (PID ${pid}) holding port ${port}`
+                    );
+                    // /T = kill the whole tree, /F = force
+                    child_process.exec(`taskkill /F /T /PID ${pid}`, () => {});
+                    anyKilled = true;
+                  }
+                  if (pending === 0) {
+                    if (!anyKilled) return finish(false);
+                    // Give Windows ~750ms to actually release the socket.
+                    setTimeout(() => finish(true), 750);
+                  }
+                }
+              );
+            }
+          }
+        );
+      } else {
+        // POSIX: lsof to find PID, then verify command name via ps.
+        child_process.exec(
+          `lsof -nP -iTCP:${port} -sTCP:LISTEN -t`,
+          (err, stdout) => {
+            if (err || !stdout) return finish(false);
+            const pids = stdout.trim().split(/\s+/).filter(p => /^\d+$/.test(p));
+            if (pids.length === 0) return finish(false);
+
+            let pending = pids.length;
+            let anyKilled = false;
+            for (const pid of pids) {
+              child_process.exec(`ps -p ${pid} -o comm=`, (e2, out2) => {
+                pending--;
+                if (!e2 && out2 && /xeqm-rpc/i.test(out2)) {
+                  this.backend.sendLog(
+                    "warn",
+                    `Killing orphaned xeqm-rpc (PID ${pid}) holding port ${port}`
+                  );
+                  try {
+                    process.kill(parseInt(pid, 10), "SIGKILL");
+                    anyKilled = true;
+                  } catch (_) {
+                    /* already gone */
+                  }
+                }
+                if (pending === 0) {
+                  if (!anyKilled) return finish(false);
+                  setTimeout(() => finish(true), 500);
+                }
+              });
+            }
+          }
+        );
+      }
     });
   }
 
