@@ -33,43 +33,48 @@
         <div class="layout-padding">
           <div class="row items-center non-selectable">
             <div class="q-mr-sm">
-              <TxTypeIcon :type="tx.type" :tooltip="false" />
+              <TxTypeIcon :type="displayType" :tooltip="false" />
             </div>
 
-            <div v-if="tx.type == 'in'" :class="'tx-' + tx.type">
+            <div v-if="displayType == 'in'" :class="'tx-' + displayType">
               {{
                 $t("strings.transactions.description", {
                   type: $t("strings.transactions.types.incoming")
                 })
               }}
             </div>
-            <div v-else-if="tx.type == 'out'" :class="'tx-' + tx.type">
+            <div v-else-if="displayType == 'out'" :class="'tx-' + displayType">
               {{
                 $t("strings.transactions.description", {
                   type: $t("strings.transactions.types.outgoing")
                 })
               }}
             </div>
-            <div v-else-if="tx.type == 'pool'" :class="'tx-' + tx.type">
+            <div v-else-if="displayType == 'pool'" :class="'tx-' + displayType">
               {{
                 $t("strings.transactions.description", {
                   type: $t("strings.transactions.types.pendingIncoming")
                 })
               }}
             </div>
-            <div v-else-if="tx.type == 'pending'" :class="'tx-' + tx.type">
+            <div v-else-if="displayType == 'pending'" :class="'tx-' + displayType">
               {{
                 $t("strings.transactions.description", {
                   type: $t("strings.transactions.types.pendingOutgoing")
                 })
               }}
             </div>
-            <div v-else-if="tx.type == 'failed'" :class="'tx-' + tx.type">
+            <div v-else-if="displayType == 'failed'" :class="'tx-' + displayType">
               {{
                 $t("strings.transactions.description", {
                   type: $t("strings.transactions.types.failed")
                 })
               }}
+            </div>
+            <div v-else-if="displayType == 'unlock_request'" :class="'tx-' + displayType">
+              Stake unlock request — your unlock signal has been recorded on
+              the chain. The staked outputs will return to this wallet after
+              the 14-day voluntary unlock window completes.
             </div>
           </div>
 
@@ -276,6 +281,16 @@ export default {
   },
   computed: mapState({
     theme: state => state.gateway.app.config.appearance.theme,
+    displayType() {
+      if (!this.tx || this.tx.type == null) return "";
+      const amt = Number(this.tx.amount) || 0;
+      const fee = Number(this.tx.fee) || 0;
+      const outBuckets = ["failed", "out", "pending"];
+      if (amt === 0 && fee === 0 && outBuckets.includes(this.tx.type)) {
+        return "unlock_request";
+      }
+      return this.tx.type;
+    },
     can_open(state) {
       const { net_type } = state.gateway.app.config.app;
       return net_type !== "stagenet";

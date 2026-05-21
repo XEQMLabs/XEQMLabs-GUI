@@ -8,6 +8,20 @@
     <template v-else>
       <div class="q-pa-md">
         <div class="row gutter-md">
+          <!-- Priority: Blink (instant, quorum-validated) vs Standard -->
+          <div class="col-12 priority">
+            <div class="priority-label">{{ $t("fieldLabels.priority") }}</div>
+            <q-btn-toggle
+              v-model="newTx.priority"
+              toggle-color="primary"
+              color="accent"
+              :options="[
+                { label: 'Blink', value: 5 },
+                { label: 'Standard', value: 1 }
+              ]"
+            />
+          </div>
+
           <!-- Amount -->
           <div class="col-12 amount">
             <OxenField
@@ -30,20 +44,6 @@
               >
                 {{ $t("buttons.all") }}
               </q-btn>
-            </OxenField>
-          </div>
-
-          <!-- Priority hidden - only slow/safe tx type available on current mainnet -->
-          <div class="col-6 priority" style="display: none;">
-            <OxenField :label="$t('fieldLabels.priority')">
-              <q-select
-                v-model="newTx.priority"
-                emit-value
-                map-options
-                :options="priorityOptions"
-                borderless
-                dense
-              />
             </OxenField>
           </div>
         </div>
@@ -136,7 +136,7 @@
 <script>
 import { mapState } from "vuex";
 import { useVuelidate } from "@vuelidate/core";
-import { required, decimal } from "@vuelidate/validators";
+import { required, decimal, helpers } from "@vuelidate/validators";
 import { address, greater_than_zero } from "src/validators/common";
 import OxenField from "components/oxen_field";
 import WalletPassword from "src/mixins/wallet_password";
@@ -163,7 +163,7 @@ export default {
       newTx: {
         amount: 0,
         address: "",
-        priority: 1,
+        priority: 5,
         address_book: {
           save: false,
           name: "",
@@ -215,15 +215,18 @@ export default {
       },
       address: {
         required,
-        isAddress(value) {
+        // Async address validation must be wrapped with helpers.withAsync
+        // in Vuelidate 2, otherwise it complains the validator didn't
+        // return a Boolean and surfaces a confusing "must be boolean"
+        // error to the user.
+        isAddress: helpers.withAsync(function(value) {
           if (value === "") return true;
-
           return new Promise(resolve => {
             address(value, this.$gateway)
               .then(() => resolve(true))
               .catch(() => resolve(false));
           });
-        }
+        })
       }
     }
   },
@@ -276,8 +279,7 @@ export default {
                     color: rgba(255, 255, 255, 0.7);
                     line-height: 1.5;
                   ">
-                    <strong style="color: #ffaa00;">IMPORTANT:</strong> Save your Transaction ID above for your records.<br><br>
-                    Your remaining balance will be temporarily locked while the transaction confirms. Funds typically unlock after <span style="color: #ffaa00; font-weight: 600;">~10 blocks (~20 minutes)</span>.
+                    Your remaining balance will be temporarily locked while the transaction confirms. Funds typically unlock after <span style="color: #ffaa00; font-weight: 600;">~10 blocks (~10 minutes)</span>.
                   </div>
                 </div>
               `,
@@ -306,7 +308,7 @@ export default {
           this.newTx = {
             amount: 0,
             address: "",
-            priority: 1,
+            priority: 5,
             address_book: {
               save: false,
               name: "",
@@ -471,6 +473,15 @@ export default {
 }
 
 .priority {
-  padding-left: 10px;
+  // Align with sibling fields (Amount, Address, Notes) that use OxenField.
+  // OxenField's label has margin: 6px 0, so match that here.
+  .priority-label {
+    margin: 6px 0;
+    font-weight: 500;
+    font-size: 12px;
+    color: rgba(255, 255, 255, 0.6);
+    user-select: none;
+    cursor: default;
+  }
 }
 </style>

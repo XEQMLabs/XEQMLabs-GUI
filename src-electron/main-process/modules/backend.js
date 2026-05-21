@@ -190,6 +190,30 @@ export class Backend {
     this.send("session_log", { level, message });
   }
 
+  // Atomic config write: serialize to a sibling .tmp file, then rename over
+  // the target. Rename is atomic on NTFS and POSIX, so the on-disk file is
+  // always either the old valid JSON or the new valid JSON — never a partial
+  // write left behind by an interrupted async writeFile (which is what was
+  // corrupting config.json and stranding the GUI at "Loading settings").
+  //
+  // All config writes (startup, save_config, save_config_init,
+  // quick_save_config, port migration, auto-pick remote) MUST go through
+  // this helper so the invariant holds session-wide.
+  _writeConfigAtomic() {
+    const toWrite = objectAssignDeep.noMutate({}, this.config_data);
+    const tmpPath = this.config_file + ".tmp";
+    try {
+      fs.writeFileSync(tmpPath, JSON.stringify(toWrite, null, 4), "utf8");
+      fs.renameSync(tmpPath, this.config_file);
+      return true;
+    } catch (err) {
+      this.sendLog("error", `Failed to write config atomically: ${err.message}`);
+      // Best-effort cleanup so stale .tmp doesn't accumulate.
+      try { fs.unlinkSync(tmpPath); } catch (_) {}
+      return false;
+    }
+  }
+
   receive(data) {
     // ws v8+ delivers text frames as Buffer objects; convert to string so that
     // SCEE.decryptString can correctly base64-decode the ciphertext.
@@ -239,24 +263,14 @@ export class Backend {
 
         console.log("[Backend] Config_data.app AFTER merge:", JSON.stringify(this.config_data.app, null, 2));
 
-        // Use sync write to ensure config is saved before app restart (do not persist wallets_backup_path)
-        try {
-          const toWrite = objectAssignDeep.noMutate({}, this.config_data);
-          if (toWrite.app && "wallets_backup_path" in toWrite.app) delete toWrite.app.wallets_backup_path;
-          const configJson = JSON.stringify(toWrite, null, 4);
-          console.log("[Backend] Writing config to disk, net_type:", this.config_data.app?.net_type);
-          fs.writeFileSync(
-            this.config_file,
-            configJson,
-            "utf8"
-          );
-          console.log("[Backend] Config written successfully to:", this.config_file);
-
-          // Verify the write by reading back
-          const verifyData = fs.readFileSync(this.config_file, "utf8");
-          const verifyParsed = JSON.parse(verifyData);
-          console.log("[Backend] Verified config on disk, net_type:", verifyParsed.app?.net_type);
-
+        // Keep runtime walletsBackupDir in sync if the user just changed it.
+        if (this.config_data.app && this.config_data.app.wallets_backup_path) {
+          if (this.walletsBackupDir !== this.config_data.app.wallets_backup_path) {
+            this.walletsBackupDir = this.config_data.app.wallets_backup_path;
+            try { fs.ensureDirSync(this.walletsBackupDir); } catch (_) {}
+          }
+        }
+        if (this._writeConfigAtomic()) {
           const payload = objectAssignDeep.noMutate({}, params);
           if (!payload.app) payload.app = {};
           payload.app.wallets_backup_path = this.walletsBackupDir;
@@ -264,9 +278,6 @@ export class Backend {
             config: payload,
             pending_config: payload
           });
-        } catch (err) {
-          console.error("[Backend] Failed to save config:", err);
-          this.sendLog("error", `Failed to save config: ${err.message}`);
         }
         break;
       case "save_config_init":
@@ -305,28 +316,26 @@ export class Backend {
           ...this.config_data,
           ...validated
         };
-        this.config_data.app.wallets_backup_path = this.walletsBackupDir;
+        // Preserve user-set backup path; fall back to default if unset.
+        if (!this.config_data.app.wallets_backup_path) {
+          this.config_data.app.wallets_backup_path = this.walletsBackupDir;
+        } else if (this.walletsBackupDir !== this.config_data.app.wallets_backup_path) {
+          this.walletsBackupDir = this.config_data.app.wallets_backup_path;
+          try { fs.ensureDirSync(this.walletsBackupDir); } catch (_) {}
+        }
 
-        const toWrite = objectAssignDeep.noMutate({}, this.config_data);
-        if (toWrite.app && "wallets_backup_path" in toWrite.app) delete toWrite.app.wallets_backup_path;
-        fs.writeFile(
-          this.config_file,
-          JSON.stringify(toWrite, null, 4),
-          "utf8",
-          () => {
-            if (data.method == "save_config_init") {
-              this.startup();
-            } else {
-              this.send("set_app_data", {
-                config: this.config_data,
-                pending_config: this.config_data
-              });
-              if (config_changed) {
-                this.send("settings_changed_reboot");
-              }
-            }
+        this._writeConfigAtomic();
+        if (data.method == "save_config_init") {
+          this.startup();
+        } else {
+          this.send("set_app_data", {
+            config: this.config_data,
+            pending_config: this.config_data
+          });
+          if (config_changed) {
+            this.send("settings_changed_reboot");
           }
-        );
+        }
         break;
       }
       case "init":
@@ -334,13 +343,28 @@ export class Backend {
         break;
 
       case "open_explorer": {
-        // Block explorer not yet available for XEQM network
-        // TODO: Update URLs when block explorer is deployed
-        this.send("show_notification", {
-          type: "warning",
-          message: "Block explorer not yet available for the XEQM network.",
-          timeout: 3000
-        });
+        // explorer.xeqmlabs.com is the canonical mainnet explorer.
+        // Only mainnet is supported there; stagenet/testnet have no public
+        // explorer, so we fall back to opening the homepage with a notice.
+        const netType = this.config_data.app?.net_type;
+        if (netType && netType !== "mainnet") {
+          this.send("show_notification", {
+            type: "warning",
+            message: `No public explorer for ${netType} — only mainnet is published.`,
+            timeout: 3000
+          });
+          break;
+        }
+        const base = "https://explorer.xeqmlabs.com";
+        let url = base;
+        if (params && typeof params.id === "string" && params.id.length > 0) {
+          if (params.type === "tx") {
+            url = `${base}/tx/${params.id}`;
+          } else if (params.type === "service_node") {
+            url = `${base}/service_node/${params.id}`;
+          }
+        }
+        require("electron").shell.openExternal(url);
         break;
       }
 
@@ -618,26 +642,33 @@ export class Backend {
     this.checkVersion();
 
     fs.readFile(this.config_file, "utf8", (err, data) => {
+      let disk_config_data = null;
       if (err) {
         console.log("[Backend] No config file found, using defaults");
-        // First run — no config file. Save defaults to disk and auto-start
-        // using the default US remote node without showing the setup wizard.
-        fs.writeFile(
-          this.config_file,
-          JSON.stringify(this.config_data, null, 4),
-          "utf8",
-          () => {}
-        );
       } else {
         // Remove BOM (Byte Order Mark) if present
         if (data.charCodeAt(0) === 0xfeff) {
           data = data.slice(1);
         }
+        // Parse defensively. A partial/corrupt file (e.g., from an
+        // interrupted write before atomic-rename was in place) would
+        // otherwise throw here and silently halt startup — the user
+        // would see "Loading settings" forever. On parse failure, treat
+        // this like a first run: keep defaults, log a warning, continue.
+        try {
+          disk_config_data = JSON.parse(data);
+          console.log("[Backend] Config read from disk, net_type:", disk_config_data.app?.net_type);
+          console.log("[Backend] Config read from disk, daemon type:", disk_config_data.daemons?.[disk_config_data.app?.net_type]?.type);
+        } catch (parseErr) {
+          this.sendLog(
+            "warn",
+            `config.json is corrupt (${parseErr.message}); falling back to defaults and overwriting on next save`
+          );
+          disk_config_data = null;
+        }
+      }
 
-        let disk_config_data = JSON.parse(data);
-        console.log("[Backend] Config read from disk, net_type:", disk_config_data.app?.net_type);
-        console.log("[Backend] Config read from disk, daemon type:", disk_config_data.daemons?.[disk_config_data.app?.net_type]?.type);
-
+      if (disk_config_data) {
         // semi-shallow object merge
         Object.keys(disk_config_data).map(key => {
           if (!this.config_data.hasOwnProperty(key)) {
@@ -648,8 +679,11 @@ export class Backend {
             disk_config_data[key]
           );
         });
-
         console.log("[Backend] After merge, net_type:", this.config_data.app?.net_type);
+      } else {
+        // First run OR corrupt config — persist current defaults so the
+        // next read sees a valid file.
+        this._writeConfigAtomic();
       }
 
       // here we may want to check if config data is valid, if not also send code -1
@@ -686,17 +720,23 @@ export class Backend {
         }
       }
 
-      // save config file back to file (do not persist wallets_backup_path)
-      const toWriteStartup = objectAssignDeep.noMutate({}, this.config_data);
-      if (toWriteStartup.app && "wallets_backup_path" in toWriteStartup.app) delete toWriteStartup.app.wallets_backup_path;
-      fs.writeFile(
-        this.config_file,
-        JSON.stringify(toWriteStartup, null, 4),
-        "utf8",
-        () => {}
-      );
+      // Wallet backup path: user-set value takes precedence; otherwise
+      // default to the AppData location. Also keep this.walletsBackupDir
+      // (used by syncWalletsToBackup) in sync with the active value.
+      if (!this.config_data.app.wallets_backup_path) {
+        this.config_data.app.wallets_backup_path = this.walletsBackupDir;
+      } else {
+        this.walletsBackupDir = this.config_data.app.wallets_backup_path;
+        try {
+          fs.ensureDirSync(this.walletsBackupDir);
+        } catch (e) {
+          console.warn("[Backend] Could not ensure user backup dir:", e.message);
+        }
+      }
 
-      this.config_data.app.wallets_backup_path = this.walletsBackupDir;
+      // Persist the validated, migration-applied config so the next read
+      // sees a canonical version. Atomic; safe if the GUI is killed mid-startup.
+      this._writeConfigAtomic();
       console.log("[Backend] Sending to frontend - net_type:", this.config_data.app?.net_type);
       console.log("[Backend] ========== STARTUP COMPLETE ==========");
 
@@ -836,13 +876,7 @@ export class Backend {
           );
           _dmn.remote_port = 9232;
           // Persist so next launch uses the corrected port
-          try {
-            const toWrite = objectAssignDeep.noMutate({}, this.config_data);
-            if (toWrite.app && "wallets_backup_path" in toWrite.app) delete toWrite.app.wallets_backup_path;
-            fs.writeFileSync(this.config_file, JSON.stringify(toWrite, null, 4), "utf8");
-          } catch (err) {
-            this.sendLog("warn", `Could not persist port migration: ${err.message}`);
-          }
+          this._writeConfigAtomic();
         }
       }
 
@@ -868,13 +902,7 @@ export class Backend {
             `Auto-selected remote node before wallet-rpc start: ${pick.host}:${pick.port} (${pick.region})`
           );
           // Persist so we stick to the same node on next launch
-          try {
-            const toWrite = objectAssignDeep.noMutate({}, this.config_data);
-            if (toWrite.app && "wallets_backup_path" in toWrite.app) delete toWrite.app.wallets_backup_path;
-            fs.writeFileSync(this.config_file, JSON.stringify(toWrite, null, 4), "utf8");
-          } catch (err) {
-            this.sendLog("warn", `Could not persist auto-picked remote: ${err.message}`);
-          }
+          this._writeConfigAtomic();
         }
       }
 

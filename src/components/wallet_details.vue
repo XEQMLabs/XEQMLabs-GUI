@@ -8,23 +8,9 @@
       <div class="row justify-center">
         <div class="funds column items-center">
           <div class="balance">
-            <q-btn-toggle
-              v-model="balancestakeselector"
-              toggle-color="primary"
-              color="accent"
-              :options="[
-                {
-                  label: $t('strings.xeqmBalance'),
-                  value: 'balance'
-                },
-                {
-                  label: $t('strings.stake'),
-                  value: 'stake'
-                }
-              ]"
-            />
+            <img src="XEQMLabs-mark.svg" class="balance-mark" alt="XEQM" />
             <div class="value row items-center justify-center">
-              <span><FormatOxen :amount="info.balance"/></span>
+              <span><FormatOxen :amount="info.balance || 0"/></span>
               <q-btn
                 flat
                 dense
@@ -39,13 +25,13 @@
                 <q-tooltip>{{ $t("menuItems.rescanWallet") }}</q-tooltip>
               </q-btn>
             </div>
-            <div v-if="balancestakeselector === 'balance'" class="usd-value">
+            <div class="usd-value">
               <span>{{ pricePerXEQM }}</span>
               <span class="separator">·</span>
               <span>{{ totalUsdValue }}</span>
             </div>
           </div>
-          <div v-if="balancestakeselector != 'stake'" class="row unlocked">
+          <div class="row unlocked">
             <span
               >{{ $t("strings.xeqmUnlockedShort") }}:
               <FormatOxen :amount="info.unlocked_balance"
@@ -53,20 +39,6 @@
             <span v-if="fundsLocked && lockMessage" class="lock-indicator">
               <q-icon name="lock_clock" size="14px" />
               {{ lockMessage }}
-            </span>
-          </div>
-          <div v-if="balancestakeselector == 'stake'" class="row unlocked">
-            <span v-if="info.accrued_balance > 0"
-              >{{ $t("strings.xeqmAccumulatedRewards") }}:
-              <FormatOxen :amount="info.accrued_balance" />•
-              {{ $t("strings.nextPayout") }}:
-              <FormatNextPayout
-                :payout-block="info.accrued_balance_next_payout"
-                :current-block="info.height"
-              />
-            </span>
-            <span v-if="info.accrued_balance == 0">
-              No accumulated rewards from staking
             </span>
           </div>
         </div>
@@ -82,21 +54,14 @@
 <script>
 import { mapState } from "vuex";
 import FormatOxen from "components/format_oxen";
-import FormatNextPayout from "components/format_next_payout";
 import WalletSettings from "components/menus/wallet_settings";
 import CopyIcon from "components/icons/copy_icon";
 export default {
   name: "WalletDetails",
   components: {
     FormatOxen,
-    FormatNextPayout,
     WalletSettings,
     CopyIcon
-  },
-  data() {
-    return {
-      balancestakeselector: "balance"
-    };
   },
   computed: {
     ...mapState({
@@ -217,22 +182,17 @@ export default {
     background: linear-gradient(180deg, #080c12 0%, #030508 100%);
 
     .balance {
-      .q-btn-toggle {
-        padding: 2px;
-        border-radius: 4px;
-
-        .q-btn {
-          padding: 1px 8px !important;
-          min-height: 18px !important;
-          font-size: 10px !important;
-        }
+      .balance-mark {
+        display: block;
+        width: 48px;
+        height: 48px;
+        margin: 0 auto 8px;
       }
-
       .usd-value {
         font-size: 13px;
         font-family: "JetBrains Mono", monospace;
         color: rgba(0, 212, 255, 0.65);
-        margin-top: 2px;
+        margin-top: 8px;
         letter-spacing: 0.02em;
 
         .separator {
@@ -287,6 +247,7 @@ export default {
     }
 
     .unlocked {
+      margin-top: 8px;
       font-size: 14px;
       font-weight: 500;
       color: rgba(255, 255, 255, 0.6);

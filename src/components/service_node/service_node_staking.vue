@@ -2,12 +2,20 @@
   <div class="service-node-staking">
     <div class="q-px-md q-pt-md">
       <p class="tab-desc">
-        {{ $t("strings.serviceNodeContributionDescription") }}
+        Contribute to a pool service node. Enter the node's public key
+        and the amount of XEQM you want to stake — your funds earn a
+        share of that node's block rewards (8.25 XEQM per block won,
+        distributed per stake share minus the operator's cut of up to
+        10%) while staked. Once contributed, funds are locked until
+        the node exits the network: <b>14 days</b> if you (or the
+        operator) initiate a voluntary unlock via <b>My Stakes</b>,
+        or <b>7 days</b> as a punitive cooldown if the node is
+        deregistered for failing quorum tests. Learn more on the
         <span
           style="cursor: pointer; text-decoration: underline;"
           @click="xeqmlabsWebsite"
-          >XEQMLabs {{ $t("strings.website") }}.</span
-        >
+          >XEQMLabs website</span
+        >.
       </p>
       <OxenField
         :label="$t('fieldLabels.serviceNodeKey')"
@@ -60,12 +68,6 @@
           :label="$t('buttons.stake')"
           @click="stake()"
         />
-        <q-btn
-          :disable="!is_able_to_send"
-          color="accent"
-          :label="$t('buttons.sweepAll')"
-          @click="sweepAllWarning()"
-        />
       </div>
     </div>
     <ServiceNodeContribute
@@ -73,18 +75,7 @@
       class="contribute"
       @contribute="fillStakingFields"
     />
-    <ConfirmTransactionDialog
-      :show="confirmSweepAll"
-      :amount="confirmFields.totalAmount"
-      :is-blink="confirmFields.isBlink"
-      :send-to="confirmFields.destination"
-      :fee="confirmFields.totalFees"
-      :on-confirm-transaction="onConfirmTransaction"
-      :on-cancel-transaction="onCancelTransaction"
-    />
-    <q-inner-loading
-      :showing="stake_status.sending || sweep_all_status.sending"
-    >
+    <q-inner-loading :showing="stake_status.sending">
       <q-spinner color="primary" size="30" />
     </q-inner-loading>
   </div>
@@ -98,22 +89,17 @@ import { required, decimal } from "@vuelidate/validators";
 import { service_node_key, greater_than_zero } from "src/validators/common";
 import OxenField from "components/oxen_field";
 import WalletPassword from "src/mixins/wallet_password";
-import ConfirmDialogMixin from "src/mixins/confirm_dialog_mixin";
 import ServiceNodeContribute from "./service_node_contribute";
 import ServiceNodeMixin from "src/mixins/service_node_mixin";
-import ConfirmTransactionDialog from "components/confirm_tx_dialog";
-
-const DO_NOTHING = 10;
 
 export default {
   setup() { return { v$: useVuelidate() }; },
   name: "ServiceNodeStaking",
   components: {
     OxenField,
-    ServiceNodeContribute,
-    ConfirmTransactionDialog
+    ServiceNodeContribute
   },
-  mixins: [WalletPassword, ConfirmDialogMixin, ServiceNodeMixin],
+  mixins: [WalletPassword, ServiceNodeMixin],
   data() {
     return {
       service_node: {
@@ -123,12 +109,6 @@ export default {
         // start at min/max for the wallet
         minStakeAmount: 0,
         maxStakeAmount: 0
-      },
-      confirmFields: {
-        isBlink: false,
-        totalAmount: -1,
-        destination: "",
-        totalFees: 0
       }
     };
   },
@@ -138,9 +118,7 @@ export default {
       unlocked_balance: state => state.gateway.wallet.info.unlocked_balance,
       info: state => state.gateway.wallet.info,
       stake_status: state => state.gateway.service_node_status.stake,
-      sweep_all_status: state => state.gateway.sweep_all_status,
       award_address: state => state.gateway.wallet.info.address,
-      confirmSweepAll: state => state.gateway.sweep_all_status.code === 1,
       netType: state => state.gateway.app.config.app?.net_type || "mainnet",
       is_ready() {
         return this.$store.getters["gateway/isReady"];
@@ -208,9 +186,6 @@ export default {
     },
     stakeStatusCode() {
       return this.stake_status ? this.stake_status.code : 0;
-    },
-    sweepAllStatusCode() {
-      return this.sweep_all_status ? this.sweep_all_status.code : DO_NOTHING;
     }
   },
   validations: {
@@ -247,52 +222,12 @@ export default {
           });
           break;
       }
-    },
-    sweepAllStatusCode(code, oldCode) {
-      if (code === oldCode) return;
-      switch (code) {
-        // the "nothing", so we can update state without doing anything
-        // in particular
-        case DO_NOTHING:
-          break;
-        case 1:
-          this.buildDialogFieldsSweepAll(this.sweep_all_status);
-          break;
-        case 0:
-          this.$q.notify({
-            type: "positive",
-            timeout: 1000,
-            message: this.sweep_all_status.message || ""
-          });
-          this.v$.$reset();
-          this.newTx = {
-            amount: 0,
-            address: "",
-            // blink
-            priority: 5,
-            address_book: {
-              save: false,
-              name: "",
-              description: ""
-            },
-            note: ""
-          };
-          break;
-        case -1:
-          this.$q.notify({
-            type: "negative",
-            timeout: 3000,
-            message: this.sweep_all_status.message || ""
-          });
-          break;
-      }
     }
   },
   methods: {
     xeqmlabsWebsite() {
-      const url = "https://github.com/DomXEQ/XEQMLabs-GUI";
       this.$gateway.send("core", "open_url", {
-        url
+        url: "https://xeqmlabs.com"
       });
     },
     fillStakingFields(key, minContribution) {
@@ -327,95 +262,12 @@ export default {
         return nodeOfKey;
       }
     },
-    onConfirmTransaction() {
-      // put the loading spinner up
-      this.$store.commit("gateway/set_sweep_all_status", {
-        code: DO_NOTHING,
-        message: "Getting sweep all tx information",
-        sending: true
-      });
-
-      const isBlink = this.confirmFields.isBlink;
-
-      const relayTxData = {
-        isBlink,
-        isSweepAll: true
-      };
-
-      // Commit the transaction
-      this.$gateway.send("wallet", "relay_tx", relayTxData);
-    },
-    onCancelTransaction() {
-      this.$store.commit("gateway/set_sweep_all_status", {
-        code: DO_NOTHING,
-        message: "Cancel the transaction from confirm dialog",
-        sending: false
-      });
-    },
-    sweepAllWarning() {
-      this.$q
-        .dialog({
-          title: this.$t("dialog.sweepAllWarning.title"),
-          message: this.$t("dialog.sweepAllWarning.message"),
-          ok: {
-            label: this.$t("dialog.sweepAllWarning.ok"),
-            color: "primary"
-          },
-          cancel: {
-            flat: true,
-            label: this.$t("dialog.buttons.cancel"),
-            color: "negative"
-          }
-        })
-        .onOk(() => {
-          this.sweepAll();
-        })
-        .onDismiss(() => {})
-        .onCancel(() => {});
-    },
-    buildDialogFieldsSweepAll(txData) {
-      this.confirmFields = this.buildDialogFields(txData);
-    },
     areButtonsEnabled() {
       // if we can find the service node key in the list of service nodes
       const key = this.service_node.key;
       return !!this.awaiting_service_nodes.find(
         n => n.service_node_pubkey === key
       );
-    },
-    async sweepAll() {
-      const { unlocked_balance } = this.info;
-
-      const tx = {
-        amount: unlocked_balance / this.atomicDivisor,
-        address: this.award_address,
-        priority: 0
-      };
-
-      let passwordDialog = await this.showPasswordConfirmation({
-        title: this.$t("dialog.sweepAll.title"),
-        noPasswordMessage: this.$t("dialog.sweepAll.message"),
-        ok: {
-          label: this.$t("dialog.sweepAll.ok"),
-          color: "#129fca"
-        }
-      });
-      passwordDialog
-        .onOk(password => {
-          password = password || "";
-          this.$store.commit("gateway/set_sweep_all_status", {
-            code: DO_NOTHING,
-            message: "Sweeping all",
-            sending: true
-          });
-          const newTx = objectAssignDeep.noMutate(tx, {
-            password,
-            isSweepAll: true
-          });
-          this.$gateway.send("wallet", "transfer", newTx);
-        })
-        .onDismiss(() => {})
-        .onCancel(() => {});
     },
     async stake() {
       this.v$.service_node.$touch();

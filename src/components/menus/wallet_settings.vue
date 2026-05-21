@@ -65,6 +65,14 @@
             clickable
             v-ripple
             :class="{ 'text-grey-6': !is_ready }"
+            @click="is_ready && (closeMenu(), sweepAllWarning())"
+          >
+            <q-item-label header>Sweep All</q-item-label>
+          </q-item>
+          <q-item
+            clickable
+            v-ripple
+            :class="{ 'text-grey-6': !is_ready }"
             @click="is_ready && (closeMenu(), showModal('rescan'))"
           >
             <q-item-label header>{{
@@ -450,20 +458,43 @@
         </div>
       </div>
     </q-dialog>
+
+    <!-- SWEEP ALL confirm dialog -->
+    <ConfirmTransactionDialog
+      :show="confirmSweepAll"
+      :amount="confirmFields.totalAmount"
+      :is-blink="confirmFields.isBlink"
+      :send-to="confirmFields.destination"
+      :fee="confirmFields.totalFees"
+      :on-confirm-transaction="onConfirmSweep"
+      :on-cancel-transaction="onCancelSweep"
+    />
+    <q-inner-loading :showing="sweep_all_status.sending">
+      <q-spinner color="primary" size="30" />
+    </q-inner-loading>
   </div>
 </template>
 
 <script>
+import objectAssignDeep from "object-assign-deep";
 import { mapState } from "vuex";
 import WalletPassword from "src/mixins/wallet_password";
+import ConfirmDialogMixin from "src/mixins/confirm_dialog_mixin";
 import OxenField from "components/oxen_field";
+import ConfirmTransactionDialog from "components/confirm_tx_dialog";
+
+// Match the sentinel used by send.vue for the sweep-all status watcher:
+// neutral "did something but don't take watcher action" code, so an
+// in-progress relay or post-success reset doesn't re-trigger the dialog.
+const DO_NOTHING = 10;
 
 export default {
   name: "WalletSettings",
   components: {
-    OxenField
+    OxenField,
+    ConfirmTransactionDialog
   },
-  mixins: [WalletPassword],
+  mixins: [WalletPassword, ConfirmDialogMixin],
   data() {
     return {
       modals: {
@@ -490,6 +521,12 @@ export default {
           new_password: "",
           new_password_confirm: ""
         }
+      },
+      confirmFields: {
+        isBlink: false,
+        totalAmount: -1,
+        destination: "",
+        totalFees: 0
       }
     };
   },
@@ -502,6 +539,8 @@ export default {
     daemon_connecting: state => state.gateway.app.daemon_connecting,
     isTestnet: state => state.gateway.app.config.app.net_type === "testnet",
     config: state => state.gateway.app.pending_config,
+    sweep_all_status: state => state.gateway.sweep_all_status,
+    confirmSweepAll: state => state.gateway.sweep_all_status.code === 1,
     is_ready() {
       return this.$store.getters["gateway/isReady"];
     },
@@ -510,6 +549,35 @@ export default {
     }
   }),
   watch: {
+    // Sweep All status machine:
+    //   code 10 (DO_NOTHING) — in-flight, ignored
+    //   code 1 — backend has built the sweep TX; show confirm dialog
+    //   code 0 — relay succeeded
+    //   code -1 — failed
+    "sweep_all_status.code"(code, oldCode) {
+      if (code === oldCode) return;
+      switch (code) {
+        case DO_NOTHING:
+          break;
+        case 1:
+          this.confirmFields = this.buildDialogFields(this.sweep_all_status);
+          break;
+        case 0:
+          this.$q.notify({
+            type: "positive",
+            timeout: 1500,
+            message: this.sweep_all_status.message || "Sweep complete"
+          });
+          break;
+        case -1:
+          this.$q.notify({
+            type: "negative",
+            timeout: 3000,
+            message: this.sweep_all_status.message || "Sweep failed"
+          });
+          break;
+      }
+    },
     secret: {
       handler(val, old) {
         if (val.view_key == old.view_key) return;
@@ -884,6 +952,86 @@ export default {
         })
         .onCancel(() => {})
         .onDismiss(() => {});
+    },
+
+    // ── Sweep All ─────────────────────────────────────────────────────────
+    // Consolidates every unlocked output in the wallet into a single output
+    // sent back to the user's primary address. Useful before staking when
+    // the wallet has many small reward-payout outputs. Used to live on the
+    // Service Nodes / Staking tab; moved here so users find it under the
+    // standard wallet-maintenance actions.
+    sweepAllWarning() {
+      if (!this.is_ready) return;
+      this.$q
+        .dialog({
+          title: this.$t("dialog.sweepAllWarning.title"),
+          message: this.$t("dialog.sweepAllWarning.message"),
+          ok: {
+            label: this.$t("dialog.sweepAllWarning.ok"),
+            color: "primary"
+          },
+          cancel: {
+            flat: true,
+            label: this.$t("dialog.buttons.cancel"),
+            color: "negative"
+          }
+        })
+        .onOk(() => this.sweepAll())
+        .onDismiss(() => {})
+        .onCancel(() => {});
+    },
+    async sweepAll() {
+      const { unlocked_balance, address } = this.info;
+      // 1 XEQM = 1e9 atomic. Backend re-multiplies and compares to
+      // wallet_state.unlocked_balance to confirm sweep semantics.
+      const tx = {
+        amount: unlocked_balance / 1e9,
+        address,
+        priority: 0
+      };
+
+      const passwordDialog = await this.showPasswordConfirmation({
+        title: this.$t("dialog.sweepAll.title"),
+        noPasswordMessage: this.$t("dialog.sweepAll.message"),
+        ok: {
+          label: this.$t("dialog.sweepAll.ok"),
+          color: "primary"
+        }
+      });
+      passwordDialog
+        .onOk(password => {
+          password = password || "";
+          this.$store.commit("gateway/set_sweep_all_status", {
+            code: DO_NOTHING,
+            message: "Sweeping all",
+            sending: true
+          });
+          const payload = objectAssignDeep.noMutate(tx, {
+            password,
+            isSweepAll: true
+          });
+          this.$gateway.send("wallet", "transfer", payload);
+        })
+        .onDismiss(() => {})
+        .onCancel(() => {});
+    },
+    onConfirmSweep() {
+      this.$store.commit("gateway/set_sweep_all_status", {
+        code: DO_NOTHING,
+        message: "Relaying sweep transaction",
+        sending: true
+      });
+      this.$gateway.send("wallet", "relay_tx", {
+        isBlink: this.confirmFields.isBlink,
+        isSweepAll: true
+      });
+    },
+    onCancelSweep() {
+      this.$store.commit("gateway/set_sweep_all_status", {
+        code: DO_NOTHING,
+        message: "Sweep cancelled",
+        sending: false
+      });
     }
   }
 };

@@ -1,13 +1,30 @@
 <template>
   <div class="service-node-stake-tab">
     <div class="q-pa-md">
+      <div class="tab-desc q-mb-md">
+        Service nodes where this wallet has an active stake — either as
+        the operator or as a contributor. Click <b>Unlock</b> on any
+        node to begin the unlock process. Stake-return timing depends
+        on how the node exits the network:
+        <br /><br />
+        <b>Voluntary unlock (14 days)</b> — you initiated the unlock.
+        The node continues operating and earning during the wind-down,
+        then your stake returns to this wallet.
+        <br /><br />
+        <b>Involuntary deregistration (7 days)</b> — the node was
+        deregistered by the network for failing quorum tests. Stake is
+        frozen as a punitive cooldown, accumulated decommission credits
+        are forfeited, and the stake's key images are blacklisted from
+        re-registration until the lock expires.
+      </div>
       <div class="q-pb-sm header">
         <span v-if="service_nodes.length">
           {{ $t("titles.currentlyStakedNodes") }}
         </span>
-        <span v-else>{{
-          $t("strings.serviceNodeStartStakingDescription")
-        }}</span>
+        <span v-else>
+          You don't have any active stakes yet. Use the
+          <b>Staking</b> tab to contribute to a pool node.
+        </span>
       </div>
       <div v-if="service_nodes">
         <ServiceNodeList
@@ -63,7 +80,10 @@ export default {
       theme: state => state.gateway.app.config.appearance.theme,
       unlock_status: state => state.gateway.service_node_status.unlock,
       our_address: state => {
-        const primary = state.gateway.wallet.address_list.primary[0];
+        // address_list.primary populates after wallet open. Guard against
+        // the initial-render window where the array is empty.
+        const list = state.gateway.wallet.address_list || {};
+        const primary = (list.primary && list.primary[0]) || null;
         return (primary && primary.address) || null;
       },
       // just SNs the user has contributed to
@@ -108,8 +128,11 @@ export default {
 
           this.$q.notify({
             type: "positive",
-            timeout: 1000,
-            message: this.unlock_status.message || ""
+            timeout: 4000,
+            message:
+              "Unlock submitted successfully. " +
+              (this.unlock_status.message ||
+                "Your stake will return to this wallet after the 14-day voluntary unlock window.")
           });
           this.v$.$reset();
           break;
@@ -136,8 +159,20 @@ export default {
               let password = this.password || "";
               this.gatewayUnlock(password, this.key, true);
             })
-            .onDismiss(() => null)
-            .onCancel(() => null);
+            .onDismiss(() => {
+              // Reset code so the next Unlock click re-triggers the
+              // can-unlock prompt. Without this, the watcher's
+              // `code === oldCode` guard would swallow the next code:1
+              // and the confirm dialog would never reopen.
+              this.$store.commit("gateway/set_snode_status", {
+                unlock: { code: 0, message: "", sending: false }
+              });
+            })
+            .onCancel(() => {
+              this.$store.commit("gateway/set_snode_status", {
+                unlock: { code: 0, message: "", sending: false }
+              });
+            });
           break;
         case -1:
           this.key = null;

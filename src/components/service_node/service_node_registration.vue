@@ -1,25 +1,27 @@
 <template>
   <div class="service-node-registration">
     <div class="q-pa-md">
-      <i18n
-        path="strings.serviceNodeRegistrationDescription"
-        tag="div"
-        class="tab-desc q-mb-lg"
-      >
-        <b place="registerCommand">register_service_node</b>
-        <b place="prepareCommand">prepare_registration</b>
-      </i18n>
+      <div class="tab-desc q-mb-lg">
+        Submit a service node registration to the network. Paste the
+        <b>register_service_node</b> command you generated on your service
+        node's daemon — this wallet will pay the operator stake
+        (200,000 XEQM for solo, 100,000 XEQM for pool) and lock it as
+        collateral against the node's public key.
+        <br /><br />
+        You only need this tab if you operate a service node and this is
+        the wallet holding the operator stake. The registration command
+        itself is generated on the SN box — see the operator setup guide
+        for the daemon-side commands.
+      </div>
       <OxenField
         :label="$t('fieldLabels.serviceNodeCommand')"
         :error="v$.registration_string.$error"
-        :disabled="registration_status.sending"
       >
         <q-input
           v-model.trim="registration_string"
           type="textarea"
           class="full-width text-area-oxen"
           placeholder="register_service_node ..."
-          :disabled="registration_status.sending"
           borderless
           dense
           @blur="v$.registration_string.$touch"
@@ -120,7 +122,6 @@ export default {
       });
       passwordDialog
         .onOk(password => {
-          // in case of no password
           password = password || "";
           this.$store.commit("gateway/set_snode_status", {
             registration: {

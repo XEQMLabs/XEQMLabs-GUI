@@ -16,13 +16,15 @@
         >
           <q-item
             v-for="(tx, i) in tx_list_paged"
-            :key="tx ? `${tx.txid || i}-${(tx.type != null ? tx.type : '')}-${i}` : `tx-${i}`"
+            :key="tx ? `${tx.txid || i}-${(displayType(tx) || '')}-${i}` : `tx-${i}`"
+            clickable
+            v-ripple
             class="oxen-list-item transaction"
-            :class="'tx-' + (tx && tx.type != null ? tx.type : '')"
+            :class="'tx-' + displayType(tx)"
             @click="details(tx)"
           >
             <q-item-section class="type">
-              <div>{{ typeToString(tx.type) }}</div>
+              <div>{{ typeToString(displayType(tx)) }}</div>
             </q-item-section>
             <q-item-label class="main">
               <q-item-label class="amount">
@@ -201,6 +203,19 @@ export default {
     this.pageTxList();
   },
   methods: {
+    // Stake-unlock signaling TXs carry no funds. Daemon bucket varies
+    // by confirmation state (failed/out/pending). Real sends always have
+    // a non-zero fee, so amount=0 + fee=0 reliably identifies them.
+    displayType(tx) {
+      if (!tx || tx.type == null) return "";
+      const amt = Number(tx.amount) || 0;
+      const fee = Number(tx.fee) || 0;
+      const outBuckets = ["failed", "out", "pending"];
+      if (amt === 0 && fee === 0 && outBuckets.includes(tx.type)) {
+        return "unlock_request";
+      }
+      return tx.type;
+    },
     typeToString(value) {
       switch (value) {
         case "in":
@@ -220,6 +235,8 @@ export default {
           return this.$t("strings.transactions.types.governance");
         case "stake":
           return this.$t("strings.transactions.types.stake");
+        case "unlock_request":
+          return "Unlock request";
         default:
           return "-";
       }
@@ -227,24 +244,25 @@ export default {
     filterTxList() {
       const list = this.tx_list || [];
       const all_in = ["in", "pool", "miner", "snode", "gov"];
-      const all_out = ["out", "pending", "stake"];
+      const all_out = ["out", "pending", "stake", "unlock_request"];
       const all_pending = ["pending", "pool"];
       this.tx_list_filtered = list.filter(tx => {
         if (!tx || tx.txid == null) return false;
         let valid = true;
-        if (this.type === "all_in" && !all_in.includes(tx.type)) {
+        const dt = this.displayType(tx);
+        if (this.type === "all_in" && !all_in.includes(dt)) {
           return false;
         }
 
-        if (this.type === "all_out" && !all_out.includes(tx.type)) {
+        if (this.type === "all_out" && !all_out.includes(dt)) {
           return false;
         }
 
-        if (this.type === "all_pending" && !all_pending.includes(tx.type)) {
+        if (this.type === "all_pending" && !all_pending.includes(dt)) {
           return false;
         }
 
-        if (!this.type.startsWith("all") && this.type !== tx.type) {
+        if (!this.type.startsWith("all") && this.type !== dt) {
           valid = false;
           return valid;
         }

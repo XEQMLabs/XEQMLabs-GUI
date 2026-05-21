@@ -121,6 +121,8 @@ export class Daemon {
   }
 
   start(options) {
+    // Stash for self-restart from heartbeat watchdog (maybeRestartDaemon).
+    this._lastStartOptions = options;
     const { net_type } = options.app;
     const daemon = options.daemons[net_type];
     if (daemon.type === "remote") {
@@ -574,10 +576,14 @@ export class Daemon {
         ) {
           if (n && n.error) {
             const msg = n.error.message || JSON.stringify(n.error);
-            this.backend.sendLog(
-              "error",
-              `Daemon RPC ${n.method || "unknown"} failed: ${msg}`
-            );
+            // Selective logging: spam suppression once we know it's down.
+            const fails = (this.consecutiveDaemonFailures || 0) + 1;
+            if (fails <= 3 || fails % 10 === 0) {
+              this.backend.sendLog(
+                "error",
+                `Daemon RPC ${n.method || "unknown"} failed: ${msg}`
+              );
+            }
           }
           continue;
         }
@@ -594,6 +600,20 @@ export class Daemon {
         // Share effective chain tip with wallet-rpc so it can detect true sync completion
         this.backend.daemonHeight = Math.max(h, target);
         this.isDaemonSyncing = target > h && (target - h) > 5;
+        this.daemonResponsive = true;
+        this.consecutiveDaemonFailures = 0;
+      } else {
+        // Daemon RPC failed. Track health independently so downstream
+        // consumers (wallet-rpc watchdog) don't trust a stale isDaemonSyncing.
+        this.consecutiveDaemonFailures =
+          (this.consecutiveDaemonFailures || 0) + 1;
+        if (this.consecutiveDaemonFailures >= 6) {
+          // ~30s of failure for local (5s * 6) or ~3min for remote.
+          // Clear stale sync state — we no longer know if it's syncing.
+          this.daemonResponsive = false;
+          this.isDaemonSyncing = false;
+        }
+        this.maybeRestartDaemon();
       }
 
       if (gotInfo && this.daemonHeartbeatCount % 6 === 1) {
@@ -607,6 +627,84 @@ export class Daemon {
         );
       }
     });
+  }
+
+  // After ~3 minutes of unresponsive heartbeats for a LOCAL daemon, kill the
+  // frozen process and respawn it. Remote daemons aren't ours to restart —
+  // we just surface a notification suggesting the user pick a different node.
+  maybeRestartDaemon() {
+    const FAIL_THRESHOLD_LOCAL = 36;   // 36 * 5s = ~3 min
+    const FAIL_THRESHOLD_REMOTE = 10;  // 10 * 30s = ~5 min before nagging
+    const fails = this.consecutiveDaemonFailures || 0;
+
+    if (this.daemonRestarting) return;
+
+    if (!this.local) {
+      // Remote: nag once per ~5 min sustained failure, don't try to restart.
+      if (fails === FAIL_THRESHOLD_REMOTE) {
+        this.backend.send("show_notification", {
+          type: "warning",
+          message:
+            "Remote daemon unresponsive. Try a different node in Network Settings.",
+          timeout: 10000
+        });
+      }
+      return;
+    }
+
+    if (fails < FAIL_THRESHOLD_LOCAL) return;
+    if (this._lastStartOptions == null) return;  // never started; nothing to respawn
+
+    this.daemonRestarting = true;
+    this.backend.sendLog(
+      "warn",
+      `Local daemon unresponsive for ${fails} consecutive heartbeats — restarting`
+    );
+    this.backend.send("show_notification", {
+      type: "warning",
+      message: "Restarting local daemon...",
+      timeout: 0
+    });
+
+    const finish = () => {
+      this.daemonRestarting = false;
+    };
+
+    // Kill the existing (frozen) process — SIGKILL because SIGTERM may not
+    // be honored by a hung daemon. The 'close' handler clears daemonProcess.
+    const proc = this.daemonProcess;
+    if (proc) {
+      try { proc.kill("SIGKILL"); } catch (e) {
+        this.backend.sendLog("warn", `Daemon kill failed: ${e.message}`);
+      }
+    }
+
+    // Wait briefly for the port to free, then respawn via the normal start()
+    // path. start() handles the port-occupied case too, so this is safe even
+    // if the OS hasn't yet released the socket.
+    setTimeout(() => {
+      this.start(this._lastStartOptions)
+        .then(() => {
+          this.consecutiveDaemonFailures = 0;
+          this.daemonResponsive = true;
+          this.backend.sendLog("info", "Local daemon restarted successfully");
+          this.backend.send("show_notification", {
+            type: "positive",
+            message: "Local daemon back online.",
+            timeout: 4000
+          });
+        })
+        .catch(err => {
+          const msg = err && err.message ? err.message : String(err || "unknown");
+          this.backend.sendLog("error", `Local daemon restart failed: ${msg}`);
+          this.backend.send("show_notification", {
+            type: "negative",
+            message: `Local daemon restart failed: ${msg}`,
+            timeout: 8000
+          });
+        })
+        .finally(finish);
+    }, 2000);
   }
 
   heartbeatSlowAction() {
@@ -776,17 +874,23 @@ export class Daemon {
         .then(res => res.json())
         .then(response => {
           if (response.hasOwnProperty("error")) {
-            return {
-              method: method,
-              params: params,
-              error: response.error
-            };
+            // Rewrite Oxen-era prose in daemon error messages.
+            const err = { ...response.error };
+            if (typeof err.message === "string") {
+              err.message = err.message
+                .replace(/\bOxen\b/g, "XEQM")
+                .replace(/\bOXEN\b/g, "XEQM")
+                .replace(/\boxen\b/g, "XEQM");
+            }
+            return { method, params, error: err };
           }
-          return {
-            method: method,
-            params: params,
-            result: response.result
-          };
+          if (response.result && typeof response.result.msg === "string") {
+            response.result.msg = response.result.msg
+              .replace(/\bOxen\b/g, "XEQM")
+              .replace(/\bOXEN\b/g, "XEQM")
+              .replace(/\boxen\b/g, "XEQM");
+          }
+          return { method, params, result: response.result };
         })
         .catch(error => {
           return {

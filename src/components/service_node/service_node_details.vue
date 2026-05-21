@@ -130,8 +130,6 @@
               v-for="contributor in contributors"
               :key="contributor.address"
               class="oxen-list-item"
-              clickable
-              @click="openUserWalletInfo(contributor.address)"
             >
               <q-item-label>
                 <q-item-label
@@ -210,7 +208,8 @@ export default {
       return this.$store.getters["gateway/isReady"];
     },
     our_address: state => {
-      const primary = state.gateway.wallet.address_list.primary[0];
+      const list = state.gateway.wallet.address_list || {};
+      const primary = (list.primary && list.primary[0]) || null;
       return (primary && primary.address) || null;
     },
     can_open(state) {
@@ -243,12 +242,6 @@ export default {
     }
   }),
   methods: {
-    openUserWalletInfo(contributorAddress) {
-      const url = `https://www.oxensn.com/user/${contributorAddress}`;
-      this.$gateway.send("core", "open_url", {
-        url
-      });
-    },
     openExplorer() {
       this.$gateway.send("core", "open_explorer", {
         type: "service_node",

@@ -136,9 +136,6 @@
           {{ message }}
         </div>
 
-        <div v-if="daemonStatus" class="q-mt-xs">
-          {{ $t("strings.syncingDaemon") }}: {{ daemonStatus }}
-        </div>
       </div>
 
       <div class="absolute-bottom">
@@ -196,28 +193,7 @@ export default {
     };
   },
   computed: mapState({
-    status: state => state.gateway.app.status,
-    config: state => state.gateway.app.config,
-    isLocalDaemon() {
-      if (!this.config || !this.config.app.net_type) return false;
-      return this.config.daemons[this.config.app.net_type].type === "local";
-    },
-    daemon: state => state.gateway.daemon,
-    daemonStatus() {
-      // Check to see if config is loaded
-      if (this.status.code < 3 || !this.isLocalDaemon) return null;
-
-      const currentHeight = this.daemon.info.height_without_bootstrap;
-      const targetHeight = Math.max(
-        this.daemon.info.height,
-        this.daemon.info.target_height
-      );
-      const percentage = ((100 * currentHeight) / targetHeight).toFixed(1);
-
-      if (targetHeight === 0 || currentHeight >= targetHeight) return null;
-
-      return `${currentHeight}/${targetHeight} (${percentage}%)`;
-    }
+    status: state => state.gateway.app.status
   }),
   watch: {
     status: {

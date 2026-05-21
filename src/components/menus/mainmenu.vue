@@ -43,7 +43,7 @@
             -
             <a
               href="#"
-              @click="openExternal('https://github.com/DomXEQ/XEQMLabs-GUI')"
+              @click="openExternal('https://github.com/XEQMLabs/XEQMLabs-GUI')"
               >Github</a
             >
           </p>

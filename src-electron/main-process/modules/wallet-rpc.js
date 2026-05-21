@@ -97,6 +97,15 @@ export class WalletRPC {
     return 1e9;
   }
 
+  // Rewrite Oxen-era prose returned by the daemon to XEQM equivalents.
+  localizeUpstreamMessage(msg) {
+    if (typeof msg !== "string" || !msg) return msg;
+    return msg
+      .replace(/\bOxen\b/g, "XEQM")
+      .replace(/\bOXEN\b/g, "XEQM")
+      .replace(/\boxen\b/g, "XEQM");
+  }
+
   // this function will take an options object for testnet, data-dir, etc
   start(options) {
     const { net_type } = options.app;
@@ -1063,6 +1072,9 @@ export class WalletRPC {
     this.sendGateway("reset_wallet_error");
     console.log(`[WalletRPC] restoreWallet: calling restore_deterministic_wallet for "${filename}", height=${restore_height}`);
     this.backend.sendLog("info", `restoreWallet: restore_deterministic_wallet for "${filename}", height=${restore_height}`);
+    // Mark busy before dispatch — initial restore scan holds the wallet
+    // mutex long enough for heartbeats to look like a disconnect.
+    this.lastTxSentTime = Date.now();
     this.sendRPC("restore_deterministic_wallet", {
       filename,
       password,
@@ -1603,7 +1615,9 @@ export class WalletRPC {
           // 3. While daemon itself is still syncing — wallet-rpc failures are expected.
           const activelySyncingForNotif =
             this.isRPCSyncing ||
-            (this.backend.daemon?.local && this.backend.daemon?.isDaemonSyncing) ||
+            (this.backend.daemon?.local &&
+              this.backend.daemon?.daemonResponsive &&
+              this.backend.daemon?.isDaemonSyncing) ||
             (this.lastSyncActivityTime &&
               Date.now() - this.lastSyncActivityTime < 120000);
 
@@ -1630,8 +1644,13 @@ export class WalletRPC {
         // lastSyncActivityTime: timestamp of last stdout sync activity
         // isDaemonSyncing: true while daemon target_height > height by >5 blocks
         // 120s grace window covers gaps during heavy TX processing and daemon sync
+        // Only trust isDaemonSyncing if the daemon is actually responsive.
+        // A stale "true" from a dead daemon would otherwise gate the
+        // wallet-rpc restart indefinitely.
         const daemonStillSyncing =
-          this.backend.daemon?.local && this.backend.daemon?.isDaemonSyncing;
+          this.backend.daemon?.local &&
+          this.backend.daemon?.daemonResponsive &&
+          this.backend.daemon?.isDaemonSyncing;
 
         const activelySyncing =
           this.isRPCSyncing ||
@@ -2729,6 +2748,10 @@ export class WalletRPC {
         ? "set_sweep_all_status"
         : "set_tx_status";
 
+      // Mark busy before dispatch — sweep_all holds the wallet mutex long
+      // enough for heartbeats to look like a disconnect.
+      this.lastTxSentTime = Date.now();
+
       this.sendRPC(rpc_endpoint, params)
         .then(data => {
           if (data.hasOwnProperty("error") || !data.hasOwnProperty("result")) {
@@ -3140,6 +3163,9 @@ export class WalletRPC {
       message: "Rescanning blockchain - this may take a while...",
       timeout: 10000
     });
+    // Mark busy before dispatch — rescan holds the wallet mutex long
+    // enough for heartbeats to look like a disconnect.
+    this.lastTxSentTime = Date.now();
     this.sendRPC("rescan_blockchain", {}, 600000).then(result => {
       if (result.hasOwnProperty("error")) {
         this.backend.sendLog("error", `Rescan failed: ${result.error.message || JSON.stringify(result.error)}`);
@@ -3660,11 +3686,13 @@ export class WalletRPC {
           "stake"
         ];
         types.forEach(type => {
-          if (data.result.hasOwnProperty(type)) {
-            wallet.transactions.tx_list = wallet.transactions.tx_list.concat(
-              data.result[type]
-            );
-          }
+          if (!data.result.hasOwnProperty(type)) return;
+          const list = data.result[type];
+          // Stamp type from the array key — daemon doesn't always set it
+          // on the individual TX objects (e.g. SN rewards in result.snode
+          // can arrive without tx.type set, which renders as grey "-").
+          list.forEach(tx => { tx.type = type; });
+          wallet.transactions.tx_list = wallet.transactions.tx_list.concat(list);
         });
 
         wallet.transactions.tx_list.sort(function(a, b) {
@@ -4424,7 +4452,16 @@ export class WalletRPC {
             return { method, params, error: { code: -99, message: "Stale response discarded" } };
           }
           if (response.hasOwnProperty("error")) {
-            return { method, params, error: response.error };
+            // Rewrite Oxen-era prose in daemon error messages.
+            const err = { ...response.error };
+            if (typeof err.message === "string") {
+              err.message = this.localizeUpstreamMessage(err.message);
+            }
+            return { method, params, error: err };
+          }
+          // result.msg fields (e.g. unlock prompts) also need scrubbing.
+          if (response.result && typeof response.result.msg === "string") {
+            response.result.msg = this.localizeUpstreamMessage(response.result.msg);
           }
           return { method, params, result: response.result };
         })

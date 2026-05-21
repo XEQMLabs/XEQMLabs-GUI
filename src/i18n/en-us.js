@@ -219,7 +219,7 @@ export default {
     daemonLogLevel: "DAEMON LOG LEVEL",
     daemonP2pPort: "DAEMON P2P PORT",
     data: "DATA",
-    dataStoragePath: "DATA STORAGE PATH",
+    dataStoragePath: "DATA STORAGE PATH (BLOCKCHAIN FILE LOCATION)",
     decryptRecord: "DECRYPT RECORD",
     exportTransfers: {
       exportDirectory: "CSV EXPORT DIRECTORY"
@@ -376,7 +376,7 @@ export default {
       failedWalletOpen: "Failed to open wallet. Please try again.",
       failedWalletRead: "Failed to read wallets",
       internalError: "Internal error",
-      invalidAddress: "Address not valid",
+      invalidAddress: "Please use a valid XEQM address",
       invalidAmount: "Amount not valid",
       invalidBackupOwner: "Backup owner address not valid",
       invalidNameLength: "Name must be between 1 and 64 characters long",
@@ -551,7 +551,7 @@ export default {
       "Please wait for at least 50 confirmations before generating a proof. Attempting too early may fail.",
     readingWalletList: "Reading wallet list",
     recentIncomingTransactionsToAddress:
-      "Recent incoming transactions to this address",
+      "Example incoming transactions to this address",
     recentTransactionsWithAddress: "Recent transactions with this address",
     regularWallets: "Regular wallets",
     rescanModalDescription:

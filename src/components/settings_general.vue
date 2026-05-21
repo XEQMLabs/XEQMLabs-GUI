@@ -191,7 +191,7 @@
       <OxenField :label="$t('fieldLabels.dataStoragePath')" disable-hover>
         <q-input
           v-model="config.app.data_dir"
-          disable
+          readonly
           :dark="theme == 'dark'"
           borderless
           dense
@@ -215,7 +215,7 @@
       <OxenField :label="$t('fieldLabels.walletStoragePath')" disable-hover>
         <q-input
           v-model="config.app.wallet_data_dir"
-          disable
+          readonly
           :dark="theme == 'dark'"
           borderless
           dense
@@ -237,47 +237,42 @@
         >
       </OxenField>
 
-      <!-- Blockchain Database Directory (read-only, informational) -->
-      <div class="blockchain-db-info q-mt-md q-pa-md">
-        <div class="row items-center justify-between q-mb-sm">
-          <div class="db-info-label">
-            <q-icon name="storage" size="sm" class="q-mr-sm" />
-            <strong>Blockchain Database Location</strong>
-          </div>
-          <q-btn
-            flat
-            dense
-            color="primary"
-            icon="folder_open"
-            label="Open Folder"
-            @click="openBlockchainFolder"
-          />
-        </div>
-        <div class="db-path q-pa-sm">
-          {{ blockchainDataDir }}
-        </div>
-        <p class="text-caption q-mb-none q-mt-sm">
-          This is where the {{ networkDisplayName }} blockchain data is stored.
-          You can delete this folder to resync, or copy in a pre-synced database to speed up initial sync.
-        </p>
-      </div>
-
-      <!-- Wallet Backup (read-only, informational) -->
+      <!-- Wallet Backup (persisted config field; default = AppData path) -->
       <div class="blockchain-db-info q-mt-md q-pa-md">
         <div class="row items-center justify-between q-mb-sm">
           <div class="db-info-label">
             <q-icon name="backup" size="sm" class="q-mr-sm" />
             <strong>Wallet Backup</strong>
           </div>
-          <q-btn
-            v-if="walletsBackupPath"
-            flat
-            dense
-            color="primary"
-            icon="folder_open"
-            label="Open Folder"
-            @click="openWalletBackupFolder"
-          />
+          <div>
+            <input
+              id="walletBackupPath"
+              ref="fileInputBackup"
+              type="file"
+              webkitdirectory
+              directory
+              hidden
+              @change="setWalletBackupPath"
+            />
+            <q-btn
+              flat
+              dense
+              color="primary"
+              icon="edit_location"
+              :label="$t('buttons.selectLocation')"
+              class="q-mr-sm"
+              @click="selectPath('backup')"
+            />
+            <q-btn
+              v-if="walletsBackupPath"
+              flat
+              dense
+              color="primary"
+              icon="folder_open"
+              label="Open Folder"
+              @click="openWalletBackupFolder"
+            />
+          </div>
         </div>
         <div class="db-path q-pa-sm">
           {{ walletsBackupPath || '—' }}
@@ -529,20 +524,6 @@ export default {
           return "Mainnet";
       }
     },
-    blockchainDataDir() {
-      if (!this.config.app || !this.config.app.data_dir) return "";
-      const baseDir = this.config.app.data_dir;
-      const netType = this.config.app.net_type;
-      // Mainnet uses base dir, others use subdirectories
-      switch (netType) {
-        case "testnet":
-          return `${baseDir}/testnet`;
-        case "stagenet":
-          return `${baseDir}/stagenet`;
-        default:
-          return baseDir;
-      }
-    },
     walletsBackupPath() {
       return (this.config.app && this.config.app.wallets_backup_path) || "";
     }
@@ -609,8 +590,13 @@ export default {
       });
     },
     selectPath(type) {
-      const fileInput = type === "data" ? "fileInputData" : "fileInputWallet";
-      this.$refs[fileInput].click();
+      const refMap = {
+        data: "fileInputData",
+        wallet: "fileInputWallet",
+        backup: "fileInputBackup"
+      };
+      const ref = refMap[type];
+      if (ref) this.$refs[ref].click();
     },
     setDataPath(file) {
       if (file.target.files && file.target.files.length > 0) {
@@ -620,6 +606,11 @@ export default {
     setWalletDataPath(file) {
       if (file.target.files && file.target.files.length > 0) {
         this.config.app.wallet_data_dir = file.target.files[0].path;
+      }
+    },
+    setWalletBackupPath(file) {
+      if (file.target.files && file.target.files.length > 0) {
+        this.config.app.wallets_backup_path = file.target.files[0].path;
       }
     },
     setPreset(option) {
@@ -644,11 +635,6 @@ export default {
     },
     disconnectDaemon() {
       this.$gateway.send("core", "disconnect_daemon");
-    },
-    openBlockchainFolder() {
-      if (this.blockchainDataDir) {
-        this.$gateway.send("core", "open_folder", { path: this.blockchainDataDir });
-      }
     },
     openWalletBackupFolder() {
       if (this.walletsBackupPath) {
@@ -687,6 +673,7 @@ export default {
       cursor: default !important;
     }
   }
+
 
   .current-network-indicator {
     border-radius: 8px;

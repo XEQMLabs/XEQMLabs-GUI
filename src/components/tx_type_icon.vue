@@ -16,6 +16,9 @@
   <div v-else-if="type == 'failed'" class="tx-icon">
     <q-icon name="close" size="40px" class="main-icon" color="red" />
   </div>
+  <div v-else-if="type == 'unlock_request'" class="tx-icon">
+    <q-icon name="lock_open" size="40px" class="main-icon" color="cyan" />
+  </div>
 </template>
 
 <script>
