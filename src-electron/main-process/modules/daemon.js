@@ -260,6 +260,18 @@ export class Daemon {
               );
             }
 
+            // Drain stderr so the 64KB pipe buffer never fills. Node pipes
+            // stderr by default; if nobody reads it, the daemon's next
+            // stderr.write blocks indefinitely and can crash the process.
+            this.daemonProcess.stderr.on("data", data => {
+              const text = data.toString();
+              const lines = text.split("\n");
+              for (const line of lines) {
+                const trimmed = line.trim();
+                if (trimmed.length === 0) continue;
+                this.backend.sendLog("warn", `[daemon stderr] ${trimmed}`);
+              }
+            });
             this.daemonProcess.stdout.on("data", data => {
               process.stdout.write(`Daemon: ${data}`);
               let lines = data.toString().split("\n");
