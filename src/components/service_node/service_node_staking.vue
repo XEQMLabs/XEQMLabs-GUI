@@ -9,7 +9,7 @@
         10%) while staked. Once contributed, funds are locked until
         the node exits the network: <b>14 days</b> if you (or the
         operator) initiate a voluntary unlock via <b>My Stakes</b>,
-        or <b>7 days</b> as a punitive cooldown if the node is
+        or <b>14 days</b> as a punitive cooldown if the node is
         deregistered for failing quorum tests. Learn more on the
         <span
           style="cursor: pointer; text-decoration: underline;"

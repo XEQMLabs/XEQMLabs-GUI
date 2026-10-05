@@ -11,7 +11,7 @@
         The node continues operating and earning during the wind-down,
         then your stake returns to this wallet.
         <br /><br />
-        <b>Involuntary deregistration (7 days)</b> — the node was
+        <b>Involuntary deregistration (14 days)</b> — the node was
         deregistered by the network for failing quorum tests. Stake is
         frozen as a punitive cooldown, accumulated decommission credits
         are forfeited, and the stake's key images are blacklisted from
