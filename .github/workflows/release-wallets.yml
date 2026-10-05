@@ -8,7 +8,7 @@ on:
         required: true
         type: string
       core_release:
-        description: "Core release tag to bundle (default: core-v1.0.7)"
+        description: "Core release tag to bundle (default: core-v1.1.0)"
         required: false
         type: string
         default: ""
@@ -109,7 +109,7 @@ jobs:
           set -euo pipefail
           TAG="${{ inputs.core_release }}"
           if [ -z "$TAG" ]; then
-            TAG="core-v1.0.7"  # pinned for HF21; override via workflow_dispatch core_release input
+            TAG="core-v1.1.0"  # pinned for HF22; override via workflow_dispatch core_release input
           fi
           echo "Resolved core release tag: $TAG"
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
@@ -353,7 +353,8 @@ jobs:
           files: release/**/*
           fail_on_unmatched_files: false
           generate_release_notes: false
-          draft: false
+          # Published as a draft so the installers can be smoke-tested before the release goes public.
+          draft: true
           prerelease: false
           body: |
             Official GUI wallet for **XEQMLabs (XEQM)**.
@@ -362,7 +363,11 @@ jobs:
 
             ## What's new
 
-            This release bundles **XEQM core v1.0.7 "Ragnarok"**, required for **Hard Fork 21** — weekly service node reward batching — activating at block **99,000** (~July 14, 2026 16:00 UTC). Update before the fork height to stay in sync with the network.
+            This release bundles **XEQM core v1.1.0 "Ragnarok"**, required for **Hard Fork 22**, activating at block **219,120** (~October 5, 2026 19:00 UTC). Update before the fork height to stay in sync with the network; wallets on older versions stop syncing at the fork.
+
+            - **Hard Fork 22:** one validator seat per operator in every quorum, forced deregistrations now lock stake for 14 days (the same as a voluntary unlock), and the chain keeps producing blocks if a quorum cannot form.
+            - **Privacy:** the wallet no longer sends its list of outgoing transactions to remote nodes.
+            - **Staking screens** updated for the 14-day deregistration lock.
 
             ## Downloads
 
