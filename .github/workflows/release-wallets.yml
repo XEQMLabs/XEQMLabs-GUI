@@ -294,11 +294,25 @@ jobs:
           echo "Regenerated $OUT:"
           ls -la "$OUT"
 
+      # macOS notarization now uses an App Store Connect API key (the same
+      # MACOS_NOTARY_* credential already used by xeqm-core) instead of an
+      # Apple ID + app-specific password. App-specific passwords get silently
+      # revoked (Apple ID password change, 2FA reset, expiry) and that is what
+      # 401'd this build; API keys are not tied to the Apple ID password.
+      - name: Prepare notary API key (macOS)
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          echo "${{ secrets.MACOS_NOTARY_KEY_P8_BASE64 }}" | base64 --decode > "$RUNNER_TEMP/notary_key.p8"
+          echo "APPLE_API_KEY=$RUNNER_TEMP/notary_key.p8"            >> "$GITHUB_ENV"
+          echo "APPLE_API_KEY_ID=${{ secrets.MACOS_NOTARY_KEY_ID }}"     >> "$GITHUB_ENV"
+          echo "APPLE_API_ISSUER=${{ secrets.MACOS_NOTARY_ISSUER_ID }}"  >> "$GITHUB_ENV"
+
       - name: Build Electron package
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: true
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          # APPLE_API_KEY / APPLE_API_KEY_ID / APPLE_API_ISSUER are exported to
+          # $GITHUB_ENV above on macOS; electron-builder notarizes with those.
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: npm run build:${{ matrix.platform }}
 
