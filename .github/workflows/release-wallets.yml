@@ -367,8 +367,7 @@ jobs:
           files: release/**/*
           fail_on_unmatched_files: false
           generate_release_notes: false
-          # Published as a draft so the installers can be smoke-tested before the release goes public.
-          draft: true
+          draft: false
           prerelease: false
           body: |
             Official GUI wallet for **XEQMLabs (XEQM)**.
