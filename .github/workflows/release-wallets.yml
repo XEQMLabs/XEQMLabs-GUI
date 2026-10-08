@@ -8,7 +8,7 @@ on:
         required: true
         type: string
       core_release:
-        description: "Core release tag to bundle (default: core-v1.1.0)"
+        description: "Core release tag to bundle (default: core-v1.1.1)"
         required: false
         type: string
         default: ""
@@ -109,7 +109,7 @@ jobs:
           set -euo pipefail
           TAG="${{ inputs.core_release }}"
           if [ -z "$TAG" ]; then
-            TAG="core-v1.1.0"  # pinned for HF22; override via workflow_dispatch core_release input
+            TAG="core-v1.1.1"  # pinned for HF22 rev1 (Pulse-recovery); override via workflow_dispatch core_release input
           fi
           echo "Resolved core release tag: $TAG"
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
@@ -376,11 +376,11 @@ jobs:
 
             ## What's new
 
-            This release bundles **XEQM core v1.1.0 "Ragnarok"**, required for **Hard Fork 22**, activating at block **219,120** (~October 5, 2026 19:00 UTC). Update before the fork height to stay in sync with the network; wallets on older versions stop syncing at the fork.
+            This release bundles **XEQM core v1.1.1 "Ragnarok"**, required for **Hard Fork 22 revision 1 (Pulse-recovery)**, activating at block **236,920** (~October 18, 2026 19:00 UTC). Update before that block: a wallet running the bundled local node on an older version stops syncing there.
 
-            - **Hard Fork 22:** one validator seat per operator in every quorum, forced deregistrations now lock stake for 14 days (the same as a voluntary unlock), and the chain keeps producing blocks if a quorum cannot form.
-            - **Privacy:** the wallet no longer sends its list of outgoing transactions to remote nodes.
-            - **Staking screens** updated for the 14-day deregistration lock.
+            - **Pulse-recovery:** when Pulse cannot produce a block, an authorized node signs the next block immediately instead of mining it, so chain stalls recover in seconds.
+            - **Memory:** the bundled node releases its RandomX cache when idle, cutting RAM use for wallets that run a local node.
+            - No wallet-side changes in this release; it only updates the bundled node.
 
             ## Downloads
 
