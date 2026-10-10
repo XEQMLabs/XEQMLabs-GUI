@@ -784,19 +784,19 @@ export default {
       this.$refs.keyImageExportSelect.click();
     },
     setKeyImageExportPath(file) {
-      this.modals.key_image.export_path = file.target.files[0].path;
+      this.modals.key_image.export_path = window.electronAPI.getPathForFile(file.target.files[0]);
     },
     selectKeyImageImportPath() {
       this.$refs.keyImageImportSelect.click();
     },
     setKeyImageImportPath(file) {
-      this.modals.key_image.import_path = file.target.files[0].path;
+      this.modals.key_image.import_path = window.electronAPI.getPathForFile(file.target.files[0]);
     },
     selectExportTransfersExportPath() {
       this.$refs.exportTransfersExportSelect.click();
     },
     setExportTransfersExportPath(file) {
-      this.modals.export_transfers.export_path = file.target.files[0].path;
+      this.modals.export_transfers.export_path = window.electronAPI.getPathForFile(file.target.files[0]);
     },
     async doKeyImages() {
       this.hideModal("key_image");

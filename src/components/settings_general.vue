@@ -600,17 +600,17 @@ export default {
     },
     setDataPath(file) {
       if (file.target.files && file.target.files.length > 0) {
-        this.config.app.data_dir = file.target.files[0].path;
+        this.config.app.data_dir = window.electronAPI.getPathForFile(file.target.files[0]);
       }
     },
     setWalletDataPath(file) {
       if (file.target.files && file.target.files.length > 0) {
-        this.config.app.wallet_data_dir = file.target.files[0].path;
+        this.config.app.wallet_data_dir = window.electronAPI.getPathForFile(file.target.files[0]);
       }
     },
     setWalletBackupPath(file) {
       if (file.target.files && file.target.files.length > 0) {
-        this.config.app.wallets_backup_path = file.target.files[0].path;
+        this.config.app.wallets_backup_path = window.electronAPI.getPathForFile(file.target.files[0]);
       }
     },
     setPreset(option) {
