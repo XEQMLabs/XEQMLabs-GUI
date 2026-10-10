@@ -50,6 +50,10 @@ export class WalletRPC {
         height: match => match[2]
       },
       {
+        string: /Blockchain sync progress: [<>a-f0-9]+, height (\d+)/,
+        height: match => match[1]
+      },
+      {
         string: /Skipped block by height: (\d+)/,
         height: match => match[1]
       },
@@ -237,6 +241,7 @@ export class WalletRPC {
 
         const log_file = path.join(logs_dir, "wallet-rpc.log");
         args.push("--log-file", log_file);
+        this.walletLogFile = log_file;
 
         if (net_type === "testnet") {
           args.push("--testnet");
@@ -366,120 +371,14 @@ export class WalletRPC {
                 spawnOptions
               );
 
-              this.walletRPCProcess.stdout.on("data", data => {
-                process.stdout.write(`Wallet: ${data}`);
+              this.startWalletLogTail(this.walletLogFile);
+              this.startWalletLogTail(this.walletLogFile);
+      this.walletRPCProcess.stdout.on("data", data => {
+        process.stdout.write(`Wallet: ${data}`);
+        this.handleWalletRpcOutput(data.toString());
+      });
 
-                let lines = data.toString().split("\n");
-                let match,
-                  height = null;
-                let isRPCSyncing = false;
-                for (const line of lines) {
-                  const trimmed = line.trim();
-                  if (trimmed.length === 0) continue;
-
-                  // Forward important wallet-rpc output to troubleshooting logs
-                  // Parse log level from lines like "2026-02-23 15:39:42.710 E ..."
-                  const levelMatch = trimmed.match(
-                    /^\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2}\.\d+\s+([EWID])\s+/
-                  );
-                  if (levelMatch) {
-                    const lvl = levelMatch[1];
-                    // Only log errors and warnings, skip routine INFO messages
-                    if (lvl === "E") {
-                      this.backend.sendLog("error", `[wallet-rpc] ${trimmed}`);
-                    } else if (lvl === "W") {
-                      this.backend.sendLog("warn", `[wallet-rpc] ${trimmed}`);
-                    } else if (lvl === "I" && (
-                      trimmed.includes("Refresh done") ||
-                      trimmed.includes("Received money") ||
-                      trimmed.includes("Spent money") ||
-                      (trimmed.includes("balance") && !trimmed.includes("Calling RPC method"))
-                    )) {
-                      // Only log important INFO messages, exclude RPC call spam
-                      this.backend.sendLog("info", `[wallet-rpc] ${trimmed}`);
-                    }
-                  } else if (
-                    trimmed.includes("XEQMLabs") ||
-                    trimmed.includes("THROW EXCEPTION") ||
-                    trimmed.includes("Logging to") ||
-                    trimmed.includes("Binding on") ||
-                    trimmed.includes("wallet RPC server") ||
-                    trimmed.includes("Loaded wallet")
-                  ) {
-                    const isErr = trimmed.includes("THROW EXCEPTION");
-                    this.backend.sendLog(
-                      isErr ? "error" : "info",
-                      `[wallet-rpc] ${trimmed}`
-                    );
-                  }
-
-                  for (const regex of this.height_regexes) {
-                    match = line.match(regex.string);
-                    if (match) {
-                      height = regex.height(match);
-                      isRPCSyncing = true;
-                      break;
-                    }
-                  }
-                }
-
-                // Keep track on whether a wallet is syncing or not.
-                // Only set isRPCSyncing to true from stdout — never flip it to false here.
-                // It gets cleared explicitly when syncPoller confirms we've reached chain tip.
-                // This prevents the flag from flickering off between stdout chunks, which
-                // was causing the heartbeat to misidentify active syncs as crashes.
-                if (isRPCSyncing) {
-                  this.sendGateway("set_wallet_data", { isRPCSyncing: true });
-                  this.isRPCSyncing = true;
-                  this.lastSyncActivityTime = Date.now();
-                }
-
-                if (height && Date.now() - this.last_height_send_time > 1000) {
-                  this.last_height_send_time = Date.now();
-                  this.sendGateway("set_wallet_data", {
-                    info: {
-                      height
-                    }
-                  });
-                }
-              });
-              // Buffer of recent stderr lines so we can diagnose loader errors
-              // (missing OS deps) when the process exits.
-              const stderrTail = [];
-              const STDERR_TAIL_LIMIT = 50;
-
-              // Patterns that indicate missing dynamic-linker dependencies on
-              // each platform. When any of these show up, the binary itself
-              // couldn't even start — usually because the user skipped the
-              // platform's dependency-install step.
-              const isMissingDepLine = (line) => {
-                const l = line.toLowerCase();
-                return (
-                  l.includes("library not loaded") ||             // macOS dyld
-                  l.includes("symbol not found") ||               // macOS dyld (newer)
-                  l.includes("image not found") ||                // macOS dyld (older)
-                  l.includes("cannot open shared object") ||      // Linux ld.so
-                  l.includes("error while loading shared libraries") ||  // Linux
-                  l.includes("no such file or directory") && l.includes(".so") ||
-                  /the code execution cannot proceed.*\.dll/i.test(line)  // Windows
-                );
-              };
-
-              const buildDepHelpMessage = () => {
-                const platform = process.platform;
-                if (platform === "darwin") {
-                  return "Wallet binary failed to launch — a required system library is missing. macOS bundles all required libraries inside the .app, so this usually means the .app was not installed correctly. Re-download the .dmg and drag XEQM GUI to /Applications. If the problem persists, run 'xattr -cr \"/Applications/XEQM GUI.app\"' in Terminal and try again.";
-                }
-                if (platform === "linux") {
-                  return "Wallet binary failed to launch — required system libraries are missing. Install the dependencies first:\n\n  sudo apt-get install -y libboost-all-dev libsodium23 libfuse2t64 libzmq5 libzstd1 libhidapi-libusb0 libhidapi-hidraw0 libusb-1.0-0\n\n(On Ubuntu 22.04 or older, use libfuse2 instead of libfuse2t64.) See the Releases page for full instructions.";
-                }
-                if (platform === "win32") {
-                  return "Wallet binary failed to launch — a required Windows DLL could not be found. This usually means antivirus removed a file from the install folder, or the installer was interrupted. Reinstall from the official .exe and add an antivirus exception for the install folder.";
-                }
-                return "Wallet binary failed to launch — required system libraries are missing. Check the Releases page for dependency install instructions for your OS.";
-              };
-
-              this.walletRPCProcess.on("error", err => {
+      this.walletRPCProcess.on("error", err => {
                 process.stderr.write(`Wallet: ${err}`);
                 this.backend.sendLog(
                   "error",
@@ -487,6 +386,7 @@ export class WalletRPC {
                 );
               });
               this.walletRPCProcess.on("close", code => {
+                this.stopWalletLogTail();
                 process.stderr.write(`Wallet: exited with code ${code} \n`);
                 let exitMsg = `[wallet-rpc] Process exited with code ${code}`;
                 if (code !== null && (code > 255 || code < 0)) {
@@ -1090,6 +990,7 @@ export class WalletRPC {
 
       console.log(`[WalletRPC] restoreWallet: success, finalizing wallet "${filename}"`);
       this.backend.sendLog("info", `restoreWallet: restore_deterministic_wallet succeeded for "${filename}"`);
+      this.scanProgressAt = Date.now();
 
       // store hash of the password so we can check against it later when requesting private keys, or for sending txs
       // For remote wallets, this.auth[2] might be null, so generate a salt if needed
@@ -1382,6 +1283,7 @@ export class WalletRPC {
         return;
       }
       this.backend.sendLog("info", `Wallet "${filename}" opened successfully`);
+      this.scanProgressAt = Date.now();
 
       // If daemon is connected, trigger a refresh to sync with the network
       // Note: wallet-rpc is already started with --daemon-address, so no need to call set_daemon
@@ -1498,6 +1400,7 @@ export class WalletRPC {
     this.lastSyncHeight = 0;
     this.syncStableCount = 0;
     this.syncPollerSawMovement = false;
+    this.syncPollInFlight = false;
 
     this.syncPoller = setInterval(() => {
       if (!this.syncPollerActive || this.syncCompleted) {
@@ -1505,8 +1408,11 @@ export class WalletRPC {
         return;
       }
 
-      // Only poll height quickly during sync
-      this.sendRPC("getheight", {}, 3000).then(data => {
+      // Only poll height quickly during sync; one probe at a time so a blocked wallet-rpc cannot pile them up.
+      if (this.syncPollInFlight) return;
+      this.syncPollInFlight = true;
+      this.sendRPC("getheight", {}, 15000).then(data => {
+        this.syncPollInFlight = false;
         // Multiple interval ticks may queue RPCs before the first one resolves.
         // Once syncCompleted is set by the first resolved call, discard the rest.
         if (this.syncCompleted) return;
@@ -1534,6 +1440,13 @@ export class WalletRPC {
         // Primary signal: wallet height is within 3 blocks of the daemon's known tip.
         // Fallback: height has been stable for 5+ polls and is above 1000 (daemon not yet known).
         const daemonHeight = this.backend.daemonHeight || 0;
+        if (daemonHeight > 0 && height < daemonHeight - 3) {
+          this.lastSyncActivityTime = Date.now();
+          if (!this.isRPCSyncing) {
+            this.isRPCSyncing = true;
+            this.sendGateway("set_wallet_data", { isRPCSyncing: true });
+          }
+        }
         const atChainTip = daemonHeight > 0 && height >= daemonHeight - 3 && height > 1000;
         const stableFallback = !daemonHeight && this.syncStableCount >= 5 && height > 1000;
 
@@ -1568,13 +1481,137 @@ export class WalletRPC {
     this.sendGateway("set_wallet_data", { isRPCSyncing: false });
   }
 
+  // wallet-rpc writes its log to --log-file only, so stdout carries just the banner. The same
+  // parser serves both stdout and the tailed log file.
+  handleWalletRpcOutput(text) {
+    let match, height = null;
+    let sawProgress = false;
+    for (const line of text.split("\n")) {
+      const trimmed = line.trim();
+      if (trimmed.length === 0) continue;
+
+      // Log lines look like "[2026-10-09 22:44:05] [+1m24.864s] [wallet.wallet2:warning|wallet/wallet2.cpp:3167] ..."
+      const levelMatch = trimmed.match(/^\[\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\] \[[^\]]*\] \[[^\]|]+:(\w+)\|/);
+      if (levelMatch) {
+        const lvl = { critical: "E", error: "E", warning: "W", info: "I" }[levelMatch[1]] || "D";
+        if (trimmed.includes("Blockchain sync progress")) {
+          this.backend.sendLog("info", `[wallet-rpc] ${trimmed}`);
+        } else if (lvl === "E") {
+          this.backend.sendLog("error", `[wallet-rpc] ${trimmed}`);
+        } else if (lvl === "W") {
+          this.backend.sendLog("warn", `[wallet-rpc] ${trimmed}`);
+        } else if (lvl === "I" && (
+          trimmed.includes("Refresh done") ||
+          trimmed.includes("Received money") ||
+          trimmed.includes("Spent money") ||
+          (trimmed.includes("balance") && !trimmed.includes("Calling RPC method"))
+        )) {
+          this.backend.sendLog("info", `[wallet-rpc] ${trimmed}`);
+        }
+        // A finished refresh means wallet-rpc answers again; resume normal heartbeats.
+        if (trimmed.includes("Refresh done")) this.scanProgressAt = 0;
+      } else if (
+        trimmed.includes("XEQMLabs") ||
+        trimmed.includes("THROW EXCEPTION") ||
+        trimmed.includes("Logging to") ||
+        trimmed.includes("Binding on") ||
+        trimmed.includes("wallet RPC server") ||
+        trimmed.includes("Loaded wallet")
+      ) {
+        this.backend.sendLog(
+          trimmed.includes("THROW EXCEPTION") ? "error" : "info",
+          `[wallet-rpc] ${trimmed}`
+        );
+      }
+
+      for (const regex of this.height_regexes) {
+        match = line.match(regex.string);
+        if (match) {
+          height = regex.height(match);
+          sawProgress = true;
+          break;
+        }
+      }
+    }
+
+    // Only ever set the syncing flag here; the syncPoller clears it once the tip is reached.
+    if (sawProgress) {
+      this.scanProgressAt = Date.now();
+      this.lastSyncActivityTime = Date.now();
+      if (!this.isRPCSyncing) {
+        this.isRPCSyncing = true;
+        this.sendGateway("set_wallet_data", { isRPCSyncing: true });
+      }
+    }
+    if (height && Date.now() - this.last_height_send_time > 1000) {
+      this.last_height_send_time = Date.now();
+      this.sendGateway("set_wallet_data", { info: { height } });
+    }
+  }
+
+  // Follow wallet-rpc.log from its current end; this is the only live progress source during a scan.
+  startWalletLogTail(logFile) {
+    this.stopWalletLogTail();
+    if (!logFile) return;
+    this.walletLogOffset = 0;
+    this.walletLogPartial = "";
+    try {
+      this.walletLogOffset = fs.statSync(logFile).size;
+    } catch (e) {
+      // not created yet; the first tick starts from the beginning
+    }
+    this.walletLogTail = setInterval(() => {
+      let size;
+      try {
+        size = fs.statSync(logFile).size;
+      } catch (e) {
+        return;
+      }
+      if (size < this.walletLogOffset) this.walletLogOffset = 0; // rotated
+      if (size === this.walletLogOffset) return;
+      const buf = Buffer.alloc(Math.min(size - this.walletLogOffset, 1 << 20));
+      let fd;
+      try {
+        fd = fs.openSync(logFile, "r");
+        const n = fs.readSync(fd, buf, 0, buf.length, this.walletLogOffset);
+        this.walletLogOffset += n;
+        const text = this.walletLogPartial + buf.toString("utf8", 0, n);
+        const cut = text.lastIndexOf("\n");
+        this.walletLogPartial = cut >= 0 ? text.slice(cut + 1) : text;
+        if (cut >= 0) this.handleWalletRpcOutput(text.slice(0, cut));
+      } catch (e) {
+        // read again next tick
+      } finally {
+        if (fd !== undefined) fs.closeSync(fd);
+      }
+    }, 1000);
+  }
+
+  stopWalletLogTail() {
+    clearInterval(this.walletLogTail);
+    this.walletLogTail = null;
+  }
+
   heartbeatAction(extended = false) {
-    if (this.isRestarting) return;
+    // A scan blocks every RPC until it finishes; while the log shows progress, probing only produces noise.
+    if (this.scanProgressAt && Date.now() - this.scanProgressAt < 90000) {
+      if (!this.scanPauseLogged) {
+        this.scanPauseLogged = true;
+        this.backend.sendLog("info", "Wallet is scanning the chain; heartbeat paused until the scan finishes");
+      }
+      return;
+    }
+    this.scanPauseLogged = false;
+    // One beat at a time: a slow answer must not pile more probes onto the queue.
+    if (this.isRestarting || (this.heartbeatInFlight && !extended)) return;
+    this.heartbeatInFlight = true;
     this.heartbeatCount = (this.heartbeatCount || 0) + 1;
+    // While scanning, give each probe more room before calling it a failure.
+    const probeTimeout = this.isRPCSyncing ? 15000 : 5000;
     Promise.all([
-      this.sendRPC("get_address", { account_index: 0 }, 5000),
-      this.sendRPC("getheight", {}, 5000),
-      this.sendRPC("getbalance", { account_index: 0 }, 5000)
+      this.sendRPC("get_address", { account_index: 0 }, probeTimeout),
+      this.sendRPC("getheight", {}, probeTimeout),
+      this.sendRPC("getbalance", { account_index: 0 }, probeTimeout)
     ]).then(data => {
       let didError = false;
       let balanceChanged = false;
@@ -1650,7 +1687,7 @@ export class WalletRPC {
               this.backend.daemon?.daemonResponsive &&
               this.backend.daemon?.isDaemonSyncing) ||
             (this.lastSyncActivityTime &&
-              Date.now() - this.lastSyncActivityTime < 120000);
+              Date.now() - this.lastSyncActivityTime < 300000);
 
           // Suppress for the first 45s after (re)start — a cold local daemon or
           // a wallet still loading often misses early heartbeats with no real
@@ -1698,7 +1735,7 @@ export class WalletRPC {
           this.isRPCSyncing ||
           daemonStillSyncing ||
           (this.lastSyncActivityTime &&
-            Date.now() - this.lastSyncActivityTime < 120000);
+            Date.now() - this.lastSyncActivityTime < 300000);
 
         if (n >= 8 && !this.isRestarting && !activelySyncing) {
           if (n === 8) {
@@ -1926,6 +1963,8 @@ export class WalletRPC {
           });
         }
       }
+    }).finally(() => {
+      this.heartbeatInFlight = false;
     });
   }
 
@@ -3489,6 +3528,7 @@ export class WalletRPC {
       });
 
       this.walletRPCProcess.on("close", code => {
+        this.stopWalletLogTail();
         process.stderr.write(`Wallet: exited with code ${code}\n`);
         let exitMsg = `[wallet-rpc] Process exited with code ${code}`;
         if (code !== null && (code > 255 || code < 0)) {
@@ -4532,6 +4572,7 @@ export class WalletRPC {
   }
 
   async quit() {
+    this.stopWalletLogTail();
     return new Promise(resolve => {
       // If using remote wallet RPC, nothing to quit
       if (!this.walletRPCProcess) {

@@ -145,7 +145,7 @@ npm install
 
 ### Daemon binaries
 
-The release workflow pulls binaries automatically from the [core repo release](https://github.com/XEQMLabs/xeqm-core/releases) pinned in the workflow (currently `core-v1.1.0`). For local development you'll need to populate `bin/` manually:
+The release workflow pulls binaries automatically from the [core repo release](https://github.com/XEQMLabs/xeqm-core/releases) pinned in the workflow (currently `core-v1.1.1`). For local development you'll need to populate `bin/` manually:
 
 1. Download the platform-appropriate archive from the [core releases](https://github.com/XEQMLabs/xeqm-core/releases) (e.g. `XEQM-core-*-windows-x86_64-*.zip`)
 2. Extract it
@@ -181,8 +181,8 @@ The release workflow is triggered manually or by pushing a `v*` tag.
 
 1. Make sure the desired core binaries are published in the [core repo releases](https://github.com/XEQMLabs/xeqm-core/releases)
 2. Go to **Actions → Release GUI Wallets → Run workflow**
-3. Enter the GUI version (e.g. `2.3.0`)
-4. Optionally pin a specific `core_release` tag (default: the tag pinned in the workflow, currently `core-v1.1.0`)
+3. Enter the GUI version (e.g. `2.3.1`)
+4. Optionally pin a specific `core_release` tag (default: the tag pinned in the workflow, currently `core-v1.1.1`)
 5. Wait for all 3 platform jobs + the publish job to complete
 
 The workflow downloads the matching core archive at build time and bakes it into each installer — no binaries are committed to this repo.

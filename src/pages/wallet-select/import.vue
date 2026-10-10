@@ -141,7 +141,7 @@ export default {
       this.$refs.fileInput.click();
     },
     setWalletPath(file) {
-      this.wallet.path = file.target.files[0].path;
+      this.wallet.path = window.electronAPI.getPathForFile(file.target.files[0]);
     },
     import_wallet() {
       this.v$.wallet.$touch();

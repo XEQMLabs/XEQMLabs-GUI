@@ -534,7 +534,13 @@ export class Backend {
             const newName = file === base ? destBase : destBase + file.slice(base.length);
             const srcPath = path.join(srcNet, file);
             const dstPath = path.join(dstNet, newName);
-            fs.copySync(srcPath, dstPath, { overwrite: true });
+            try {
+              fs.copySync(srcPath, dstPath, { overwrite: true });
+            } catch (e) {
+              // wallet-rpc holds an exclusive lock on the open wallet's .keys; the next launch backs it up.
+              if (e.code !== "EBUSY") throw e;
+              this.sendLog("info", `Wallet backup: ${file} is in use, it will be backed up at the next launch`);
+            }
           }
         }
       }

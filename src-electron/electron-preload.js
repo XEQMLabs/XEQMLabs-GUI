@@ -1,4 +1,4 @@
-const { contextBridge, ipcRenderer } = require("electron");
+const { contextBridge, ipcRenderer, webUtils } = require("electron");
 const { SCEE } = require("./main-process/modules/SCEE-Node");
 
 const scee = new SCEE();
@@ -36,6 +36,8 @@ contextBridge.exposeInMainWorld("electronAPI", {
     ipcRenderer.invoke("copy-image-to-clipboard", dataUrl),
   openExternal: url => ipcRenderer.invoke("open-external", url),
   getPlatform: () => process.platform,
+  // Electron 32 removed File.path; this is the supported way to get a chosen file's path.
+  getPathForFile: file => webUtils.getPathForFile(file),
   sceeEncrypt: (plaintext, password) => scee.encryptString(plaintext, password),
   sceeDecrypt: (ciphertext, password) =>
     scee.decryptString(ciphertext, password)
