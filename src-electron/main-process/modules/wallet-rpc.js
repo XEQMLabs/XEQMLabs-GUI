@@ -4470,7 +4470,8 @@ export class WalletRPC {
     const url = `${this.protocol}${this.hostname}:${this.port}/json_rpc`;
     const body = {
       jsonrpc: "2.0",
-      id: id,
+      // wallet-rpc reads the id as a string first and logs a conversion error for every number.
+      id: String(id),
       method: method
     };
     if (Object.keys(params).length !== 0) {
