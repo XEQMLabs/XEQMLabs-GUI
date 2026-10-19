@@ -137,6 +137,22 @@ jobs:
             exit 1
           fi
 
+          SUMS="core-checksums/${{ steps.core.outputs.tag }}.sha256"
+          if [ ! -f "$SUMS" ]; then
+            echo "FATAL: no pinned checksums for ${{ steps.core.outputs.tag }} in core-checksums/"
+            exit 1
+          fi
+          NAME="$(basename "$ARCHIVE")"
+          EXPECTED="$(awk -v f="$NAME" '{ n = $2; sub(/^\*/, "", n); sub(/\r$/, "", n); if (n == f) print $1 }' "$SUMS")"
+          ACTUAL="$( (sha256sum "$ARCHIVE" 2>/dev/null || shasum -a 256 "$ARCHIVE") | awk '{ print $1 }')"
+          if [ -z "$EXPECTED" ] || [ "$EXPECTED" != "$ACTUAL" ]; then
+            echo "FATAL: checksum mismatch for $NAME"
+            echo "expected: $EXPECTED"
+            echo "actual:   $ACTUAL"
+            exit 1
+          fi
+          echo "Verified $NAME against $SUMS"
+
           mkdir -p core-extract
           if [ "${{ matrix.core_archive }}" = "zip" ]; then
             unzip -q "$ARCHIVE" -d core-extract
@@ -321,6 +337,13 @@ jobs:
         run: |
           mkdir -p release-out
           cp -av ${{ matrix.artifact_glob }} release-out/
+          cd release-out
+          for f in *; do
+            [ -f "$f" ] || continue
+            H="$( (sha256sum "$f" 2>/dev/null || shasum -a 256 "$f") | awk '{ print $1 }')"
+            printf '%s  %s\n' "$H" "$f" > "$f.sha256"
+          done
+          ls -la
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
@@ -376,12 +399,14 @@ jobs:
 
             ## What's new
 
-            This release bundles **XEQM core v1.1.2 "Ragnarok"**, required for **Hard Fork 22 revision 1 (Pulse-recovery)**, activating at block **236,920** (~October 18, 2026 19:00 UTC). Update before that block: a wallet running the bundled local node on an older version stops syncing there.
+            Security hardening release. Everyone should update. Bundles **XEQM core v1.1.2 "Ragnarok"** (unchanged), required since **Hard Fork 22 revision 1** at block **236,920**.
 
-            - **Core v1.1.2:** fixes the reward of blocks produced by the Pulse-recovery signed fallback. Without it the fallback block is rejected and the chain stalls at the first failover after activation. Everyone on v1.1.0 or v1.1.1 must update.
-            - **Sync:** the sync changes from v2.3.2 are reverted; syncing works as in v2.3.0 and v2.3.1.
-            - **Fixed:** the file and folder pickers (restore from file, key images, export transfers, data and backup folders) fill in again. Broken since v2.2.0.
-            - **Fixed:** wallet-rpc.log no longer fills with "WRONG DATA CONVERSION" lines.
+            - **Security:** the built-in wallet RPC now requires a per-session login. Before this release any web page or program on the same computer could send commands to an open wallet.
+            - **Security:** the GUI's internal control channel accepts only the wallet window and is no longer reachable from the network.
+            - **Security:** settings and folder actions coming from the wallet window are validated before use.
+            - **Build:** bundled core binaries are verified against pinned SHA-256 hashes, and every download now ships with a `.sha256` file.
+            - **Fixed:** closing the update prompt no longer restarts the wallet.
+            - Removed an unused legacy address library.
 
             ## Downloads
 
