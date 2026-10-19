@@ -246,6 +246,9 @@ export default {
           if (this.tx_status.txid) {
             const sentTxid = this.tx_status.txid;
             const message = this.tx_status.message || "";
+            // The dialog renders HTML, so anything from wallet-rpc is escaped first.
+            const esc = s =>
+              String(s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
             this.$q
               .dialog({
                 title:
@@ -253,7 +256,7 @@ export default {
                 message: `
                 <div style="text-align: center; margin-bottom: 16px;">
                   <div style="font-size: 14px; color: #00ff88; margin-bottom: 12px;">
-                    ✓ ${message}
+                    ✓ ${esc(message)}
                   </div>
                   <div style="font-size: 12px; color: rgba(255,255,255,0.5); margin-bottom: 6px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px;">
                     Transaction ID
@@ -268,7 +271,7 @@ export default {
                     word-break: break-all;
                     user-select: all;
                     color: rgba(255,255,255,0.92);
-                  ">${sentTxid}</div>
+                  ">${esc(sentTxid)}</div>
                   <div style="
                     margin-top: 14px;
                     padding: 10px;

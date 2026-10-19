@@ -87,7 +87,7 @@ async function showUpdateDialog(mainWindow) {
     message: "There is a new version of XEQM GUI available.",
     detail: "Press Restart Wallet to apply the update",
     defaultId: 1,
-    cancelId: RESTART_BUTTON
+    cancelId: 1
   };
   const { response } = await dialog.showMessageBox(mainWindow, options);
   return response === RESTART_BUTTON;

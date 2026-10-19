@@ -156,13 +156,24 @@ export class Backend {
     this.token = config.token;
 
     this.wss = new WebSocket.Server({
+      host: "127.0.0.1",
       port: config.port,
-      maxPayload: 10 * 1024 * 1024 // 10 MB cap; loopback only, prevents unbounded memory allocation
+      maxPayload: 10 * 1024 * 1024, // 10 MB cap; loopback only, prevents unbounded memory allocation
+      verifyClient: info => this.allowClient(info)
     });
 
     this.wss.on("connection", ws => {
       ws.on("message", data => this.receive(data));
     });
+  }
+
+  // Web pages always carry an http(s) origin; the wallet window loads from file://, or from the dev server when unpackaged.
+  allowClient(info) {
+    const origin = info.origin || info.req.headers.origin || "";
+    if (!/^https?:\/\//i.test(origin)) return true;
+    if (!app.isPackaged && /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(origin)) return true;
+    this.sendLog("warn", `Rejected backend connection from origin ${origin}`);
+    return false;
   }
 
   send(event, data = {}) {
@@ -214,11 +225,54 @@ export class Backend {
     }
   }
 
+  // Merge renderer settings into existing sections only; prototype keys and UNC backup paths are dropped.
+  mergeConfig(params) {
+    const banned = ["__proto__", "constructor", "prototype"];
+    if (!params || typeof params !== "object") return;
+    for (const section of Object.keys(params)) {
+      if (banned.includes(section)) continue;
+      const target = this.config_data[section];
+      const source = params[section];
+      if (!target || typeof target !== "object" || !source || typeof source !== "object") continue;
+      for (const key of Object.keys(source)) {
+        if (banned.includes(key)) continue;
+        target[key] = source[key];
+      }
+    }
+    const backup = this.config_data.app && this.config_data.app.wallets_backup_path;
+    if (typeof backup === "string" && (backup.startsWith("\\\\") || backup.startsWith("//") || !path.isAbsolute(backup))) {
+      this.sendLog("warn", "Ignored a backup path that is not a local absolute folder");
+      this.config_data.app.wallets_backup_path = this.walletsBackupDir;
+    }
+  }
+
+  // Folders the renderer may ask the OS to open.
+  openableFolders() {
+    const appCfg = this.config_data.app || {};
+    return [
+      this.walletsBackupDir,
+      appCfg.wallets_backup_path,
+      appCfg.wallet_data_dir,
+      appCfg.data_dir,
+      this.wallet_dir,
+      this.config_dir
+    ]
+      .filter(p => typeof p === "string" && p.length > 0)
+      .map(p => path.resolve(p));
+  }
+
   receive(data) {
     // ws v8+ delivers text frames as Buffer objects; convert to string so that
     // SCEE.decryptString can correctly base64-decode the ciphertext.
     const message = Buffer.isBuffer(data) ? data.toString("utf8") : String(data);
-    let decrypted_data = JSON.parse(this.scee.decryptString(message, this.token));
+    let decrypted_data;
+    try {
+      decrypted_data = JSON.parse(this.scee.decryptString(message, this.token));
+    } catch (e) {
+      console.error("[Backend] Dropped a message that failed to decrypt");
+      return;
+    }
+    if (!decrypted_data || typeof decrypted_data !== "object") return;
 
     // route incoming request to either the daemon, wallet, or here
     switch (decrypted_data.module) {
@@ -254,12 +308,7 @@ export class Backend {
         console.log("[Backend] Config file path:", this.config_file);
         console.log("[Backend] Current config_data.app BEFORE merge:", JSON.stringify(this.config_data.app, null, 2));
 
-        Object.keys(params).map(key => {
-          this.config_data[key] = Object.assign(
-            this.config_data[key],
-            params[key]
-          );
-        });
+        this.mergeConfig(params);
 
         console.log("[Backend] Config_data.app AFTER merge:", JSON.stringify(this.config_data.app, null, 2));
 
@@ -293,12 +342,7 @@ export class Backend {
           });
         }
 
-        Object.keys(params).map(key => {
-          this.config_data[key] = Object.assign(
-            this.config_data[key],
-            params[key]
-          );
-        });
+        this.mergeConfig(params);
 
         const validated = Object.keys(this.defaults)
           .filter(k => k in this.config_data)
@@ -376,20 +420,24 @@ export class Backend {
 
       case "open_folder":
         if (typeof params.path === "string" && params.path.length > 0) {
-          // Ensure the folder exists before trying to open it
-          if (!fs.existsSync(params.path)) {
-            try {
-              fs.mkdirpSync(params.path);
-            } catch (e) {
-              this.send("show_notification", {
-                type: "negative",
-                message: `Could not create folder: ${params.path}`,
-                timeout: 3000
-              });
-              break;
-            }
+          const target = path.resolve(params.path);
+          if (!this.openableFolders().includes(target)) {
+            this.sendLog("warn", `Refused to open folder outside the wallet directories: ${target}`);
+            break;
           }
-          require("electron").shell.openPath(params.path);
+          // Ensure the folder exists before trying to open it
+          try {
+            fs.ensureDirSync(target);
+            if (!fs.statSync(target).isDirectory()) break;
+          } catch (e) {
+            this.send("show_notification", {
+              type: "negative",
+              message: `Could not create folder: ${target}`,
+              timeout: 3000
+            });
+            break;
+          }
+          require("electron").shell.openPath(target);
         }
         break;
 
