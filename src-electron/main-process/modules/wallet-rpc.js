@@ -190,8 +190,10 @@ export class WalletRPC {
           auth.substr(128, 32) // password salt
         ];
 
+        // The login reaches wallet-rpc through the environment, never the command line.
+        this.rpcEnv = { ...process.env, RPC_LOGIN: `${this.auth[0]}:${this.auth[1]}` };
+
         const args = [
-          "--disable-rpc-login",
           "--rpc-bind-port",
           options.wallet.rpc_bind_port,
           "--daemon-address",
@@ -347,18 +349,19 @@ export class WalletRPC {
               // hidden console session. Without this, wallet-rpc dies silently
               // on some user machines (Win10, no obvious AV/policy cause).
               // The console is hidden so users don't see a flashing window.
+              this.rpcEnv.PATH = `${binPath}${pathSep}${process.env.PATH}`;
               const spawnOptions =
                 process.platform === "win32"
                   ? {
                       cwd: binPath,
-                      env: { ...process.env, PATH: `${binPath}${pathSep}${process.env.PATH}` },
+                      env: this.rpcEnv,
                       detached: true,
                       windowsHide: true
                     }
                   : {
                       detached: true,
                       cwd: binPath,
-                      env: { ...process.env, PATH: `${binPath}${pathSep}${process.env.PATH}` }
+                      env: this.rpcEnv
                     };
               this.walletRPCProcess = child_process.spawn(
                 rpcPath,
@@ -3421,8 +3424,8 @@ export class WalletRPC {
     try {
       const spawnOptions =
         process.platform === "win32"
-          ? { detached: true, windowsHide: true }
-          : { detached: true };
+          ? { detached: true, windowsHide: true, env: this.rpcEnv }
+          : { detached: true, env: this.rpcEnv };
       this.walletRPCProcess = child_process.spawn(rpcPath, rpcArgs, spawnOptions);
 
       this.walletRPCProcess.stdout.on("data", data => {
@@ -4479,6 +4482,9 @@ export class WalletRPC {
     }
 
     const headers = { "Content-Type": "application/json" };
+    if (this.auth[0] && this.auth[1]) {
+      headers.Authorization = "Basic " + Buffer.from(`${this.auth[0]}:${this.auth[1]}`).toString("base64");
+    }
 
     const fetchOptions = {
       method: "POST",
