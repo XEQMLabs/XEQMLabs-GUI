@@ -90,6 +90,14 @@ jobs:
             libappindicator3-1 \
             libfuse2
 
+      - name: Refuse non-cryptographic random in app code
+        shell: bash
+        run: |
+          if grep -rn --include='*.js' --include='*.ts' --include='*.vue' 'Math\.random' src src-electron; then
+            echo 'FATAL: Math.random found in app code; use crypto.randomInt or crypto.getRandomValues'
+            exit 1
+          fi
+
       - name: Install npm dependencies
         run: npm ci
 

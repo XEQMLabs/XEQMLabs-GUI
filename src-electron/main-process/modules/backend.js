@@ -10,6 +10,7 @@ const bunyan = require("bunyan");
 const WebSocket = require("ws");
 const electron = require("electron");
 const os = require("os");
+const crypto = require("crypto");
 const fs = require("fs-extra");
 const path = require("upath");
 const objectAssignDeep = require("object-assign-deep");
@@ -942,7 +943,7 @@ export class Backend {
           this.remotes &&
           this.remotes.length > 0
         ) {
-          const pick = this.remotes[Math.floor(Math.random() * this.remotes.length)];
+          const pick = this.remotes[crypto.randomInt(this.remotes.length)];
           _dmnPreCfg.remote_host = pick.host;
           _dmnPreCfg.remote_port = pick.port;
           this.sendLog(
