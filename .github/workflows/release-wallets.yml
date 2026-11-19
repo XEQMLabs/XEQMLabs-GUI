@@ -8,7 +8,7 @@ on:
         required: true
         type: string
       core_release:
-        description: "Core release tag to bundle (default: core-v1.1.3)"
+        description: "Core release tag to bundle (default: core-v1.1.4)"
         required: false
         type: string
         default: ""
@@ -117,7 +117,7 @@ jobs:
           set -euo pipefail
           TAG="${{ inputs.core_release }}"
           if [ -z "$TAG" ]; then
-            TAG="core-v1.1.3"  # pinned: October security review release; override via workflow_dispatch core_release input
+            TAG="core-v1.1.4"  # pinned: November reliability release; override via workflow_dispatch core_release input
           fi
           echo "Resolved core release tag: $TAG"
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
@@ -407,12 +407,11 @@ jobs:
 
             ## What's new
 
-            Bundles **XEQM core v1.1.3 "Ragnarok"**, the October security review release. No hard fork, but everyone should update.
+            Bundles **XEQM core v1.1.4 "Ragnarok"**, a reliability release. No hard fork.
 
-            - **Security:** the bundled wallet now validates the output list a remote node sends before building a transaction, so a hostile remote node cannot steer ring selection.
-            - **Security:** the bundled core refuses oversized peer and RPC traffic before it can exhaust memory and enforces the network minimum fee.
-            - **Build:** the release fails if app code uses a non-cryptographic random source.
-            - Remote node auto-selection draws from the system random source.
+            - The bundled daemon on Linux and macOS now uses the jemalloc allocator, which keeps its memory use steadier over long sessions.
+            - The bundled daemon no longer keeps CPU cores busy while its database file grows.
+            - No changes to the wallet interface.
 
             ## Downloads
 
